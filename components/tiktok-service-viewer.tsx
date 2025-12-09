@@ -216,11 +216,12 @@ export function TikTokServiceViewer({
           <video
             key={currentService.id}
             src={videoUrl}
-            className="w-full h-full object-contain"
+            className="w-full h-full object-cover" // تم التعديل هنا
             controls
             autoPlay
             loop
             playsInline
+            muted // **تمت إضافة هذه الخاصية**
           />
         ) : (
           <div className="w-full h-full bg-gradient-to-br from-[#B38C8A] to-[#D4AF37] flex items-center justify-center">
