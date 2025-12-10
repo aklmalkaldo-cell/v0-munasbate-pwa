@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect, useRef, Suspense } from "react"
 import { useSearchParams } from "next/navigation"
 import { TopHeader } from "@/components/top-header"
 import { BottomNav } from "@/components/bottom-nav"
@@ -30,13 +30,29 @@ interface OccasionPageProps {
   backHref: string
 }
 
-export default function OccasionPageTemplate({
-  category,
-  categoryTitle,
-  occasion,
-  occasionTitle,
-  backHref,
-}: OccasionPageProps) {
+function LoadingFallback() {
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-[#F5E9E8] via-[#FDF8F7] to-[#F5E9E8] pb-24">
+      <TopHeader />
+      <main className="pt-20 px-4 max-w-screen-xl mx-auto">
+        <div className="flex items-center justify-center py-20">
+          <div className="w-8 h-8 border-3 border-[#D4AF37] border-t-transparent rounded-full animate-spin" />
+        </div>
+      </main>
+      <BottomNav />
+    </div>
+  )
+}
+
+export default function OccasionPageTemplate(props: OccasionPageProps) {
+  return (
+    <Suspense fallback={<LoadingFallback />}>
+      <OccasionPageContent {...props} />
+    </Suspense>
+  )
+}
+
+function OccasionPageContent({ category, categoryTitle, occasion, occasionTitle, backHref }: OccasionPageProps) {
   const searchParams = useSearchParams()
   const [services, setServices] = useState<Service[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -44,8 +60,8 @@ export default function OccasionPageTemplate({
   const [selectedIndex, setSelectedIndex] = useState(0)
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
 
-  const filterType = searchParams.get("filter") // "music" or "design"
-  const filterValue = searchParams.get("value") // "true" or "false"
+  const filterType = searchParams.get("filter")
+  const filterValue = searchParams.get("value")
 
   useEffect(() => {
     const userId = localStorage.getItem("user_id")
