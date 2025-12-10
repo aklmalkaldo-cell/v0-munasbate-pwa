@@ -244,15 +244,29 @@ export async function updateUser(userId: string, updates: Partial<User>) {
 }
 
 // دالة رفع الملفات
+const MAX_FILE_SIZE_MB = 100
+const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024
+
 export async function uploadFile(file: File, path: string): Promise<string> {
+  // التحقق من حجم الملف
+  if (file.size > MAX_FILE_SIZE_BYTES) {
+    throw new Error(`حجم الملف كبير جداً. الحد الأقصى المسموح هو ${MAX_FILE_SIZE_MB} ميجابايت`)
+  }
+
   const supabase = createClient()
 
   const { error } = await supabase.storage.from("media").upload(path, file, {
     cacheControl: "3600",
-    upsert: false,
+    upsert: true, // السماح بالكتابة فوق الملفات الموجودة
   })
 
-  if (error) throw error
+  if (error) {
+    // رسالة خطأ واضحة
+    if (error.message.includes("Payload too large") || error.message.includes("413")) {
+      throw new Error(`حجم الملف كبير جداً. يرجى تقليل حجم الملف أو ضغطه.`)
+    }
+    throw error
+  }
 
   const { data } = supabase.storage.from("media").getPublicUrl(path)
   return data.publicUrl

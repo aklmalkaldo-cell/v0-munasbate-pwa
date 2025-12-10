@@ -33,6 +33,9 @@ export default function SettingsPage() {
   const [currentAvatarUrl, setCurrentAvatarUrl] = useState<string>("")
   const [currentCoverUrl, setCurrentCoverUrl] = useState<string>("")
 
+  const MAX_IMAGE_SIZE_MB = 10
+  const MAX_IMAGE_SIZE_BYTES = MAX_IMAGE_SIZE_MB * 1024 * 1024
+
   useEffect(() => {
     const userId = localStorage.getItem("user_id")
     const isGuest = localStorage.getItem("is_guest") === "true"
@@ -90,15 +93,25 @@ export default function SettingsPage() {
   }
 
   const uploadImage = async (file: File, bucket: string, userId: string): Promise<string> => {
+    // التحقق من حجم الملف
+    if (file.size > MAX_IMAGE_SIZE_BYTES) {
+      throw new Error(`حجم الصورة كبير جداً. الحد الأقصى المسموح هو ${MAX_IMAGE_SIZE_MB} ميجابايت`)
+    }
+
     const fileExt = file.name.split(".").pop()
     const fileName = `${userId}-${Date.now()}.${fileExt}`
 
     const { error: uploadError } = await supabase.storage.from(bucket).upload(fileName, file, {
       cacheControl: "3600",
-      upsert: true,
+      upsert: true, // السماح بالكتابة فوق الملفات الموجودة
     })
 
-    if (uploadError) throw uploadError
+    if (uploadError) {
+      if (uploadError.message.includes("Payload too large") || uploadError.message.includes("413")) {
+        throw new Error(`حجم الصورة كبير جداً. يرجى تقليل حجم الصورة أو ضغطها.`)
+      }
+      throw uploadError
+    }
 
     const {
       data: { publicUrl },
