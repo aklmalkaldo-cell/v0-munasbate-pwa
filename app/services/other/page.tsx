@@ -13,10 +13,10 @@ import Image from "next/image"
 interface UserService {
   id: string
   user_id: string
-  service_name: string
+  name: string // بدلاً من service_name
   description: string
-  profile_image: string | null
-  cover_image: string | null
+  avatar_url: string | null // بدلاً من profile_image
+  cover_url: string | null // بدلاً من cover_image
   followers_count: number
   content_count: number
   created_at: string
@@ -79,8 +79,8 @@ function OtherServicesContent() {
         className={`bg-white rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-all duration-300 border ${isOwner ? "border-[#D4AF37]" : "border-[#B38C8A]/10"}`}
       >
         <div className="relative h-24 bg-gradient-to-br from-[#7B68EE] to-[#6A5ACD]">
-          {service.cover_image && (
-            <Image src={service.cover_image || "/placeholder.svg"} alt="cover" fill className="object-cover" />
+          {service.cover_url && (
+            <Image src={service.cover_url || "/placeholder.svg"} alt="cover" fill className="object-cover" />
           )}
           {isOwner && (
             <div className="absolute top-2 right-2 bg-[#D4AF37] text-white text-xs px-2 py-1 rounded-full">خدمتي</div>
@@ -90,22 +90,22 @@ function OtherServicesContent() {
         <div className="p-4 relative">
           <div className="absolute -top-8 right-4">
             <div className="w-16 h-16 rounded-full border-4 border-white bg-[#B38C8A] flex items-center justify-center overflow-hidden">
-              {service.profile_image ? (
+              {service.avatar_url ? (
                 <Image
-                  src={service.profile_image || "/placeholder.svg"}
+                  src={service.avatar_url || "/placeholder.svg"}
                   alt="profile"
                   width={64}
                   height={64}
                   className="object-cover"
                 />
               ) : (
-                <span className="text-white text-xl font-bold">{service.service_name?.[0] || "؟"}</span>
+                <span className="text-white text-xl font-bold">{service.name?.[0] || "؟"}</span>
               )}
             </div>
           </div>
 
           <div className="mt-6">
-            <h3 className="font-bold text-[#B38C8A] text-lg mb-1">{service.service_name || "خدمة"}</h3>
+            <h3 className="font-bold text-[#B38C8A] text-lg mb-1">{service.name || "خدمة"}</h3>
             <p className="text-sm text-[#B38C8A]/70 line-clamp-2 mb-3">{service.description}</p>
 
             <div className="flex items-center gap-4 text-xs text-[#B38C8A]/60">

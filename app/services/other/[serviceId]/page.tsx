@@ -28,10 +28,10 @@ import Link from "next/link"
 interface UserService {
   id: string
   user_id: string
-  service_name: string
+  name: string // بدلاً من service_name
   description: string
-  profile_image: string | null
-  cover_image: string | null
+  avatar_url: string | null // بدلاً من profile_image
+  cover_url: string | null // بدلاً من cover_image
   followers_count: number
   content_count: number
 }
@@ -73,6 +73,12 @@ function ServicePageContent() {
   const [newComment, setNewComment] = useState("")
 
   useEffect(() => {
+    const reservedPaths = ["create", "manage", "upload", "edit", "new"]
+    if (reservedPaths.includes(serviceId)) {
+      // هذا المسار يجب أن يُعالج بواسطة صفحة أخرى
+      return
+    }
+
     const storedUserId = localStorage.getItem("user_id")
     setUserId(storedUserId)
     loadService(storedUserId)
@@ -246,7 +252,7 @@ function ServicePageContent() {
       title: selectedContent.title,
       media_url: selectedContent.file_url,
       content_type: selectedContent.content_type,
-      service_name: service.service_name,
+      service_name: service.name,
     }
 
     const encodedContent = encodeURIComponent(JSON.stringify(contentData))
@@ -374,20 +380,20 @@ function ServicePageContent() {
           {/* معلومات الخدمة */}
           <div className="flex items-center gap-3 mb-4 pb-4 border-b border-[#B38C8A]/10">
             <div className="w-12 h-12 rounded-full bg-[#7B68EE] flex items-center justify-center overflow-hidden">
-              {service.profile_image ? (
+              {service.avatar_url ? (
                 <Image
-                  src={service.profile_image || "/placeholder.svg"}
+                  src={service.avatar_url || "/placeholder.svg"}
                   alt="profile"
                   width={48}
                   height={48}
                   className="object-cover"
                 />
               ) : (
-                <span className="text-white font-bold">{service.service_name[0]}</span>
+                <span className="text-white font-bold">{service.name[0]}</span>
               )}
             </div>
             <div className="flex-1">
-              <h3 className="font-semibold text-[#B38C8A]">{service.service_name}</h3>
+              <h3 className="font-semibold text-[#B38C8A]">{service.name}</h3>
               <p className="text-sm text-[#B38C8A]/60">{service.followers_count} متابع</p>
             </div>
             {!isOwner && (
@@ -504,8 +510,8 @@ function ServicePageContent() {
       <main className="pt-16">
         {/* صورة الغلاف */}
         <div className="relative h-40 bg-gradient-to-br from-[#7B68EE] to-[#6A5ACD]">
-          {service.cover_image && (
-            <Image src={service.cover_image || "/placeholder.svg"} alt="cover" fill className="object-cover" />
+          {service.cover_url && (
+            <Image src={service.cover_url || "/placeholder.svg"} alt="cover" fill className="object-cover" />
           )}
           <button
             onClick={() => router.back()}
@@ -527,20 +533,20 @@ function ServicePageContent() {
         <div className="px-4 pb-4 -mt-12 relative">
           <div className="flex items-end gap-4 mb-4">
             <div className="w-24 h-24 rounded-full border-4 border-white bg-[#B38C8A] flex items-center justify-center overflow-hidden">
-              {service.profile_image ? (
+              {service.avatar_url ? (
                 <Image
-                  src={service.profile_image || "/placeholder.svg"}
+                  src={service.avatar_url || "/placeholder.svg"}
                   alt="profile"
                   width={96}
                   height={96}
                   className="object-cover"
                 />
               ) : (
-                <span className="text-white text-3xl font-bold">{service.service_name[0]}</span>
+                <span className="text-white text-3xl font-bold">{service.name[0]}</span>
               )}
             </div>
             <div className="flex-1 pb-2">
-              <h1 className="text-xl font-bold text-[#B38C8A]">{service.service_name}</h1>
+              <h1 className="text-xl font-bold text-[#B38C8A]">{service.name}</h1>
               <div className="flex items-center gap-4 text-sm text-[#B38C8A]/60">
                 <span>{service.followers_count} متابع</span>
                 <span>{service.content_count} محتوى</span>

@@ -158,10 +158,10 @@ export default function CreateUserServicePage() {
 
       const insertData = {
         user_id: userId,
-        service_name: serviceName,
+        name: serviceName, // بدلاً من service_name
         description: formData.description.trim() || null,
-        profile_image: profileImageUrl,
-        cover_image: coverImageUrl,
+        avatar_url: profileImageUrl, // بدلاً من profile_image
+        cover_url: coverImageUrl, // بدلاً من cover_image
       }
 
       const { data, error } = await supabase.from("user_services").insert(insertData).select().single()
