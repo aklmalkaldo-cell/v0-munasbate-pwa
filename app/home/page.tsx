@@ -6,13 +6,11 @@ import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { TopHeader } from "@/components/top-header"
 import { BottomNav } from "@/components/bottom-nav"
-import { Music, Mic, Mail, Heart, Search, TrendingUp, Star, Sparkles, Plus } from "lucide-react"
+import { Music, Mic, Mail, Heart, Search, TrendingUp, Star, Sparkles, Plus, Grid3X3 } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import Link from "next/link"
 import { createClient } from "@/lib/supabase/client"
-
-// ... existing code (ServiceTypeSelector, EnhancedServiceCard, TopRatedCard components) ...
 
 function ServiceTypeSelector({ onSelect }: { onSelect: (category: string) => void }) {
   const categories = [
@@ -178,6 +176,13 @@ export default function HomePage() {
       gradient: "bg-gradient-to-br from-[#C9A86C] to-[#A88B4A]",
       count: 29,
     },
+    {
+      title: "خدمات أخرى",
+      icon: Grid3X3,
+      href: "/services/other",
+      gradient: "bg-gradient-to-br from-[#7B68EE] to-[#6A5ACD]",
+      count: 0,
+    },
   ]
 
   return (
@@ -211,9 +216,12 @@ export default function HomePage() {
             <div className="flex-1 h-px bg-gradient-to-l from-transparent via-[#B38C8A]/20 to-transparent" />
           </div>
           <div className="grid grid-cols-2 gap-4">
-            {services.map((service) => (
+            {services.slice(0, 4).map((service) => (
               <EnhancedServiceCard key={service.href} {...service} />
             ))}
+          </div>
+          <div className="mt-4">
+            <EnhancedServiceCard {...services[4]} />
           </div>
         </div>
 
