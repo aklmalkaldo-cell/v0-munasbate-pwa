@@ -3,33 +3,42 @@
 import { useState, useEffect } from "react"
 import { TopHeader } from "@/components/top-header"
 import { BottomNav } from "@/components/bottom-nav"
-import { FilterButtons } from "@/components/filter-buttons"
-import { OccasionCard } from "@/components/occasion-card"
-import { ChevronRight } from "lucide-react"
+import { ChevronRight, Music, VolumeX, List, ChevronLeft } from "lucide-react"
 import Link from "next/link"
-import { AgentPublishButton } from "@/components/agent-publish-button"
 
 export default function SheilatPage() {
   const [selectedFilter, setSelectedFilter] = useState<string | null>(null)
-  const [accountType, setAccountType] = useState<string | null>(null)
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null)
 
   useEffect(() => {
-    const type = localStorage.getItem("account_type")
-    setAccountType(type)
+    const userId = localStorage.getItem("user_id")
+    setCurrentUserId(userId)
   }, [])
 
-  const filters = ["بموسيقى", "بدون موسيقى", "عرض الكل"]
-
-  const occasions = [
-    { title: "زواج", href: "/services/sheilat/wedding", count: 15 },
-    { title: "تخرج", href: "/services/sheilat/graduation", count: 10 },
-    { title: "مواليد", href: "/services/sheilat/newborn", count: 7 },
-    { title: "نجاح", href: "/services/sheilat/success", count: 9 },
-    { title: "وطنية", href: "/services/sheilat/national", count: 12 },
+  const filters = [
+    { id: "with_music", label: "بموسيقى", icon: Music, value: true },
+    { id: "no_music", label: "بدون موسيقى", icon: VolumeX, value: null },
+    { id: "all", label: "عرض الكل", icon: List, value: null },
   ]
 
+  const occasions = [
+    { title: "زواج", href: "wedding", count: 15 },
+    { title: "تخرج", href: "graduation", count: 10 },
+    { title: "مواليد", href: "newborn", count: 7 },
+    { title: "نجاح", href: "success", count: 9 },
+    { title: "وطنية", href: "national", count: 12 },
+  ]
+
+  const getOccasionHref = (occasionHref: string) => {
+    if (selectedFilter === null || selectedFilter === "all") {
+      return `/services/sheilat/${occasionHref}`
+    }
+    const hasMusic = selectedFilter === "with_music"
+    return `/services/sheilat/${occasionHref}?filter=music&value=${hasMusic}`
+  }
+
   return (
-    <div className="min-h-screen bg-[#F5E9E8] pb-20">
+    <div className="min-h-screen bg-gradient-to-br from-[#F5E9E8] via-[#FDF8F7] to-[#F5E9E8] pb-24">
       <TopHeader />
 
       <main className="pt-20 px-4 max-w-screen-xl mx-auto">
@@ -42,25 +51,56 @@ export default function SheilatPage() {
 
         {selectedFilter === null ? (
           <div className="space-y-4">
-            <p className="text-[#B38C8A] text-center mb-6">اختر نوع الشيلة المناسبة لك</p>
-            <FilterButtons filters={filters} selectedFilter="" onFilterChange={setSelectedFilter} />
+            <p className="text-[#B38C8A] text-center mb-8">اختر نوع الشيلة المناسبة لك</p>
+            <div className="space-y-3">
+              {filters.map((filter) => (
+                <button
+                  key={filter.id}
+                  onClick={() => setSelectedFilter(filter.id)}
+                  className="w-full p-5 bg-white rounded-2xl shadow-sm hover:shadow-md transition-all flex items-center justify-between group"
+                >
+                  <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 bg-gradient-to-br from-[#B38C8A] to-[#9A7573] rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform">
+                      <filter.icon className="w-6 h-6 text-white" />
+                    </div>
+                    <span className="text-lg font-semibold text-[#B38C8A]">{filter.label}</span>
+                  </div>
+                  <ChevronLeft className="w-5 h-5 text-[#B38C8A]/50" />
+                </button>
+              ))}
+            </div>
           </div>
         ) : (
           <div>
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-semibold text-[#B38C8A]">الشيلات - {selectedFilter}</h2>
-              <button onClick={() => setSelectedFilter(null)} className="text-sm text-[#D4AF37]">
-                تغيير الفلتر
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-lg font-semibold text-[#B38C8A]">
+                الشيلات - {filters.find((f) => f.id === selectedFilter)?.label}
+              </h2>
+              <button
+                onClick={() => setSelectedFilter(null)}
+                className="text-sm text-[#D4AF37] hover:underline flex items-center gap-1"
+              >
+                تغيير
+                <ChevronRight className="w-4 h-4" />
               </button>
             </div>
             <div className="space-y-3">
               {occasions.map((occasion) => (
-                <OccasionCard key={occasion.href} title={occasion.title} href={occasion.href} count={occasion.count} />
+                <Link key={occasion.href} href={getOccasionHref(occasion.href)}>
+                  <div className="p-4 bg-white rounded-2xl shadow-sm hover:shadow-md transition-all flex items-center justify-between group">
+                    <div>
+                      <h3 className="font-semibold text-[#B38C8A] group-hover:text-[#D4AF37] transition-colors">
+                        {occasion.title}
+                      </h3>
+                      <p className="text-sm text-[#B38C8A]/60">{occasion.count} خدمة</p>
+                    </div>
+                    <ChevronLeft className="w-5 h-5 text-[#B38C8A]/50 group-hover:text-[#D4AF37] transition-colors" />
+                  </div>
+                </Link>
               ))}
             </div>
           </div>
         )}
-        {accountType === "agent" && <AgentPublishButton category="sheilat" />}
       </main>
 
       <BottomNav />

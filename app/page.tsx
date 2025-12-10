@@ -9,47 +9,37 @@ export default function HomePage() {
   const [isChecking, setIsChecking] = useState(true)
 
   useEffect(() => {
-    console.log("[v0] فحص localStorage...")
     const userId = localStorage.getItem("user_id")
-    const isGuest = localStorage.getItem("is_guest")
-
-    console.log("[v0] user_id:", userId)
-    console.log("[v0] is_guest:", isGuest)
 
     if (userId && userId !== "9999999") {
-      console.log("[v0] مستخدم مسجل، الانتقال إلى /home")
-      router.push("/home")
+      router.replace("/home")
     } else {
-      console.log("[v0] لا يوجد مستخدم، عرض شاشة الترحيب")
       setIsChecking(false)
     }
   }, [router])
 
   const handleGuestMode = () => {
-    console.log("[v0] وضع الزائر")
     localStorage.setItem("user_id", "9999999")
     localStorage.setItem("username", "زائر")
     localStorage.setItem("is_guest", "true")
-    router.push("/home")
+    router.replace("/home")
   }
 
   if (isChecking) {
     return (
       <div className="min-h-screen bg-[#F5E9E8] flex items-center justify-center">
-        <div className="text-4xl font-bold text-[#B38C8A]">Munasbate</div>
+        <h1 className="text-4xl font-bold text-[#B38C8A]">Munasbate</h1>
       </div>
     )
   }
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-[#F5E9E8] p-4" dir="rtl">
-      {/* الشعار */}
       <div className="mb-12 text-center">
         <h1 className="text-5xl font-bold text-[#B38C8A] mb-4">Munasbate</h1>
         <p className="text-[#B38C8A] text-lg">منصة متكاملة لخدمات المناسبات</p>
       </div>
 
-      {/* الأزرار */}
       <div className="w-full max-w-md space-y-4">
         <Button
           onClick={() => router.push("/auth/login")}
@@ -73,7 +63,6 @@ export default function HomePage() {
         </Button>
       </div>
 
-      {/* نص توضيحي */}
       <p className="mt-8 text-center text-sm text-[#B38C8A]/70">اكتشف عالم الزفات والشيلات والدعوات</p>
     </div>
   )

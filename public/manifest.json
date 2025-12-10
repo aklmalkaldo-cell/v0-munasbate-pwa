@@ -1,24 +1,142 @@
 {
-  "name": "Munasbate - منصبتي",
+  "name": "Munasbate - منصة المناسبات",
   "short_name": "Munasbate",
-  "description": "منصة متكاملة لخدمات المناسبات",
+  "description": "منصة متكاملة لخدمات المناسبات - زفات، شيلات، دعوات، تهنئات",
   "start_url": "/",
+  "id": "/",
   "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone", "browser"],
   "background_color": "#F5E9E8",
   "theme_color": "#D4AF37",
-  "orientation": "portrait",
+  "orientation": "portrait-primary",
+  "scope": "/",
+  "lang": "ar",
+  "dir": "rtl",
+  "categories": ["entertainment", "lifestyle", "social"],
   "icons": [
+    {
+      "src": "/icon-72x72.png",
+      "sizes": "72x72",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-96x96.png",
+      "sizes": "96x96",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-128x128.png",
+      "sizes": "128x128",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-144x144.png",
+      "sizes": "144x144",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-152x152.png",
+      "sizes": "152x152",
+      "type": "image/png",
+      "purpose": "any"
+    },
     {
       "src": "/icon-192x192.png",
       "sizes": "192x192",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-384x384.png",
+      "sizes": "384x384",
+      "type": "image/png",
+      "purpose": "any"
     },
     {
       "src": "/icon-512x512.png",
       "sizes": "512x512",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-maskable-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/icon-maskable-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
     }
-  ]
+  ],
+  "shortcuts": [
+    {
+      "name": "زفات",
+      "short_name": "زفات",
+      "description": "تصفح الزفات المتاحة",
+      "url": "/services/zaffat",
+      "icons": [{ "src": "/icons/zaffat.png", "sizes": "96x96" }]
+    },
+    {
+      "name": "شيلات",
+      "short_name": "شيلات",
+      "description": "تصفح الشيلات المتاحة",
+      "url": "/services/sheilat",
+      "icons": [{ "src": "/icons/sheilat.png", "sizes": "96x96" }]
+    },
+    {
+      "name": "دعوات",
+      "short_name": "دعوات",
+      "description": "إنشاء دعوات إلكترونية",
+      "url": "/services/invitations",
+      "icons": [{ "src": "/icons/invitations.png", "sizes": "96x96" }]
+    },
+    {
+      "name": "إنشاء منشور",
+      "short_name": "إنشاء",
+      "description": "إنشاء منشور جديد",
+      "url": "/posts/create",
+      "icons": [{ "src": "/icons/create.png", "sizes": "96x96" }]
+    }
+  ],
+  "share_target": {
+    "action": "/share",
+    "method": "POST",
+    "enctype": "multipart/form-data",
+    "params": {
+      "title": "title",
+      "text": "text",
+      "url": "url",
+      "files": [
+        {
+          "name": "media",
+          "accept": ["audio/*", "video/*", "image/*"]
+        }
+      ]
+    }
+  },
+  "screenshots": [
+    {
+      "src": "/screenshots/home.png",
+      "sizes": "1080x1920",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "الصفحة الرئيسية"
+    },
+    {
+      "src": "/screenshots/services.png",
+      "sizes": "1080x1920",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "الخدمات"
+    }
+  ],
+  "related_applications": [],
+  "prefer_related_applications": false
 }

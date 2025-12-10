@@ -1,17 +1,19 @@
 "use client"
 
 import type React from "react"
-import { useState, useEffect, useRef } from "react"
-import { useParams, useRouter } from "next/navigation"
+import { useState, useEffect, useRef, useCallback } from "react"
+import { useParams, useRouter, useSearchParams } from "next/navigation"
 import { createClient } from "@/lib/supabase/client"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { ChevronRight, Send } from "lucide-react"
+import { ChevronRight, Send, X } from "lucide-react"
 import Image from "next/image"
+import { VerifiedBadge, isVerifiedUser } from "@/components/verified-badge"
 
 export default function ChatPage() {
   const params = useParams()
   const router = useRouter()
+  const searchParams = useSearchParams()
   const userId = params.userId as string
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
@@ -22,6 +24,9 @@ export default function ChatPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [showWhatsAppDialog, setShowWhatsAppDialog] = useState(false)
   const [hasAutoReplied, setHasAutoReplied] = useState(false)
+  const [quotedService, setQuotedService] = useState<any>(null)
+  const [isSending, setIsSending] = useState(false)
+  const [returnPath, setReturnPath] = useState<string | null>(null)
 
   const supabase = createClient()
 
@@ -33,44 +38,7 @@ export default function ChatPage() {
     return "مستخدم"
   }
 
-  useEffect(() => {
-    loadChat()
-
-    const channel = supabase
-      .channel("messages")
-      .on(
-        "postgres_changes",
-        {
-          event: "INSERT",
-          schema: "public",
-          table: "messages",
-        },
-        (payload) => {
-          const newMsg = payload.new as any
-          if (
-            (newMsg.sender_user_id === currentUser?.user_id && newMsg.receiver_user_id === otherUser?.user_id) ||
-            (newMsg.sender_user_id === otherUser?.user_id && newMsg.receiver_user_id === currentUser?.user_id)
-          ) {
-            setMessages((prev) => [...prev, newMsg])
-          }
-        },
-      )
-      .subscribe()
-
-    return () => {
-      supabase.removeChannel(channel)
-    }
-  }, [userId])
-
-  useEffect(() => {
-    scrollToBottom()
-  }, [messages])
-
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
-  }
-
-  const loadChat = async () => {
+  const loadChat = useCallback(async () => {
     try {
       const currentUserId = localStorage.getItem("user_id")
       const isGuest = localStorage.getItem("is_guest") === "true"
@@ -113,20 +81,91 @@ export default function ChatPage() {
         .eq("receiver_user_id", currentUserId)
         .eq("sender_user_id", userId)
     } catch (error) {
-      console.log("[v0] خطأ في تحميل المحادثة:", error)
+      console.log("خطأ في تحميل المحادثة:", error)
     } finally {
       setIsLoading(false)
     }
+  }, [userId, router, supabase])
+
+  useEffect(() => {
+    const serviceParam = searchParams.get("service")
+    const returnParam = searchParams.get("return")
+
+    if (serviceParam) {
+      try {
+        const serviceData = JSON.parse(decodeURIComponent(serviceParam))
+        setQuotedService(serviceData)
+      } catch (error) {
+        console.log("خطأ في قراءة بيانات الخدمة:", error)
+      }
+    }
+
+    if (returnParam) {
+      setReturnPath(decodeURIComponent(returnParam))
+    }
+  }, []) // مصفوفة فارغة - يعمل مرة واحدة فقط
+
+  useEffect(() => {
+    loadChat()
+  }, [loadChat])
+
+  useEffect(() => {
+    const currentUserId = localStorage.getItem("user_id")
+    if (!currentUserId) return
+
+    const channel = supabase
+      .channel(`messages-${userId}-${currentUserId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "messages",
+        },
+        (payload) => {
+          const newMsg = payload.new as any
+          if (
+            (newMsg.sender_user_id === currentUserId && newMsg.receiver_user_id === userId) ||
+            (newMsg.sender_user_id === userId && newMsg.receiver_user_id === currentUserId)
+          ) {
+            setMessages((prev) => {
+              const exists = prev.some(
+                (m) =>
+                  m.id === newMsg.id || (m.id && m.id.toString().startsWith("temp-") && m.content === newMsg.content),
+              )
+              if (exists) {
+                return prev.map((m) =>
+                  m.id && m.id.toString().startsWith("temp-") && m.content === newMsg.content ? newMsg : m,
+                )
+              }
+              return [...prev, newMsg]
+            })
+          }
+        },
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [userId, supabase])
+
+  useEffect(() => {
+    scrollToBottom()
+  }, [messages])
+
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
   }
 
   const sendAutoReply = async (senderUserId: string) => {
     if (hasAutoReplied || otherUser?.account_type !== "agent") return
 
-    const autoReplyMessage = `أهلاً بك! حياك الله في ${getServiceName(otherUser.user_id)} 🌟
+    const autoReplyMessage = `أهلاً بك! حياك الله في ${getServiceName(otherUser.user_id)}
     
 اترك رسالتك وانتظر الرد، سيتم الرد عليك في أقرب وقت من خلال الدعم الفني المخصص.
 
-📱 للتواصل السريع عبر واتساب: +966508370913`
+للتواصل السريع عبر واتساب: +966508370913`
 
     await supabase.from("messages").insert({
       sender_user_id: otherUser.user_id,
@@ -139,24 +178,66 @@ export default function ChatPage() {
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!newMessage.trim() || !currentUser || !otherUser) return
+
+    if ((!newMessage.trim() && !quotedService) || !currentUser || !otherUser || isSending) return
+
+    setIsSending(true)
 
     try {
-      const { error } = await supabase.from("messages").insert({
+      let messageContent = newMessage.trim()
+
+      if (quotedService && !messageContent) {
+        messageContent = `أرغب في طلب هذه الخدمة: ${quotedService.title}`
+      } else if (quotedService && messageContent) {
+        messageContent = `طلب خدمة: ${quotedService.title}\n\n${messageContent}`
+      }
+
+      const messageData: any = {
         sender_user_id: currentUser.user_id,
         receiver_user_id: otherUser.user_id,
-        content: newMessage,
-      })
+        content: messageContent,
+      }
 
-      if (error) throw error
+      const optimisticMessage = {
+        id: `temp-${Date.now()}`,
+        ...messageData,
+        created_at: new Date().toISOString(),
+      }
+      setMessages((prev) => [...prev, optimisticMessage])
+
+      const hadQuotedService = !!quotedService
+      setQuotedService(null)
+      setNewMessage("")
+
+      if (hadQuotedService) {
+        window.history.replaceState({}, "", `/messages/${userId}`)
+      }
+
+      const { data, error } = await supabase.from("messages").insert(messageData).select().single()
+
+      if (error) {
+        console.log("خطأ في إرسال الرسالة:", error)
+        setMessages((prev) => prev.filter((m) => m.id !== optimisticMessage.id))
+        return
+      }
+
+      setMessages((prev) => prev.map((m) => (m.id === optimisticMessage.id ? data : m)))
 
       if (messages.length === 0 && otherUser.account_type === "agent") {
         setTimeout(() => sendAutoReply(currentUser.user_id), 1000)
       }
-
-      setNewMessage("")
     } catch (error) {
-      console.log("[v0] خطأ في إرسال الرسالة:", error)
+      console.log("خطأ في إرسال الرسالة:", error)
+    } finally {
+      setIsSending(false)
+    }
+  }
+
+  const handleBack = () => {
+    if (returnPath) {
+      router.push(returnPath)
+    } else {
+      router.push("/messages")
     }
   }
 
@@ -181,7 +262,7 @@ export default function ChatPage() {
     <div className="min-h-screen bg-[#F5E9E8] flex flex-col">
       <header className="bg-white border-b border-[#B38C8A]/20 px-4 py-3">
         <div className="flex items-center gap-3">
-          <button onClick={() => router.back()}>
+          <button onClick={handleBack}>
             <ChevronRight className="w-6 h-6 text-[#B38C8A]" />
           </button>
 
@@ -202,7 +283,10 @@ export default function ChatPage() {
           </div>
 
           <div className="flex-1">
-            <h1 className="font-medium text-[#B38C8A]">{getServiceName(otherUser?.user_id)}</h1>
+            <div className="flex items-center gap-1.5">
+              <h1 className="font-medium text-[#B38C8A]">{getServiceName(otherUser?.user_id)}</h1>
+              {isVerifiedUser(otherUser?.user_id) && <VerifiedBadge size={18} />}
+            </div>
             <p className="text-xs text-[#B38C8A]/60">
               {otherUser?.account_type === "agent" ? "خدمة عملاء" : `@${otherUser?.username}`}
             </p>
@@ -264,16 +348,64 @@ export default function ChatPage() {
         <div ref={messagesEndRef} />
       </div>
 
+      {quotedService && (
+        <div className="px-4 py-2 border-t border-[#B38C8A]/20 bg-[#F5E9E8]">
+          <div className="bg-white rounded-xl p-3 flex items-center gap-3 relative">
+            <button
+              onClick={() => {
+                setQuotedService(null)
+                window.history.replaceState({}, "", `/messages/${userId}`)
+              }}
+              className="absolute top-2 right-2 text-[#B38C8A]/50 hover:text-[#B38C8A]"
+            >
+              <X className="w-4 h-4" />
+            </button>
+
+            {(quotedService.media_url || quotedService.file_url) && (
+              <div className="w-16 h-16 rounded-lg overflow-hidden bg-[#F5E9E8] flex-shrink-0">
+                {quotedService.file_type === "video" ? (
+                  <video
+                    src={quotedService.media_url || quotedService.file_url}
+                    className="w-full h-full object-cover"
+                    muted
+                  />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center text-2xl">🎵</div>
+                )}
+              </div>
+            )}
+
+            <div className="flex-1 min-w-0">
+              <p className="text-xs text-[#B38C8A]/60 mb-1">طلب خدمة</p>
+              <p className="text-sm font-semibold text-[#B38C8A] truncate">{quotedService.title}</p>
+              {quotedService.description && (
+                <p className="text-xs text-[#B38C8A]/70 truncate">{quotedService.description}</p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       <form onSubmit={handleSend} className="bg-white border-t border-[#B38C8A]/20 px-4 py-3 pb-safe">
         <div className="flex items-center gap-2">
           <Input
             value={newMessage}
             onChange={(e) => setNewMessage(e.target.value)}
-            placeholder="اكتب رسالة..."
+            placeholder={quotedService ? "أضف رسالة (اختياري)..." : "اكتب رسالة..."}
             className="flex-1 border-[#B38C8A]/20"
+            disabled={isSending}
           />
-          <Button type="submit" size="icon" disabled={!newMessage.trim()} className="bg-[#D4AF37] hover:bg-[#B8941F]">
-            <Send className="w-4 h-4" />
+          <Button
+            type="submit"
+            size="icon"
+            disabled={(!newMessage.trim() && !quotedService) || isSending}
+            className="bg-[#D4AF37] hover:bg-[#B8941F]"
+          >
+            {isSending ? (
+              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+            ) : (
+              <Send className="w-4 h-4" />
+            )}
           </Button>
         </div>
       </form>

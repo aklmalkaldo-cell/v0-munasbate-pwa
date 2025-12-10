@@ -6,6 +6,7 @@ import { useState, useEffect, useRef } from "react"
 import { useRouter } from "next/navigation"
 import { createClient } from "@/lib/supabase/client"
 import { Heart, MessageCircle, Bookmark, Send, X } from "lucide-react"
+import { usePathname } from "next/navigation"
 
 interface TikTokServiceViewerProps {
   services: any[]
@@ -19,6 +20,7 @@ export function TikTokServiceViewer({
   onClose,
 }: TikTokServiceViewerProps) {
   const router = useRouter()
+  const pathname = usePathname()
   const [services, setServices] = useState(initialServices)
   const [currentIndex, setCurrentIndex] = useState(initialIndex)
   const [likes, setLikes] = useState<{ [key: number]: boolean }>({})
@@ -28,9 +30,10 @@ export function TikTokServiceViewer({
   const [showComments, setShowComments] = useState(false)
   const [comments, setComments] = useState<any[]>([])
   const [newComment, setNewComment] = useState("")
-  const containerRef = useRef<HTMLDivElement>(null)
+  const swipeAreaRef = useRef<HTMLDivElement>(null)
   const touchStartY = useRef(0)
   const touchEndY = useRef(0)
+  const isSwiping = useRef(false)
 
   useEffect(() => {
     const storedUserId = localStorage.getItem("user_id")
@@ -111,16 +114,20 @@ export function TikTokServiceViewer({
 
   const handleTouchStart = (e: React.TouchEvent) => {
     touchStartY.current = e.touches[0].clientY
+    isSwiping.current = true
   }
 
   const handleTouchMove = (e: React.TouchEvent) => {
+    if (!isSwiping.current) return
     touchEndY.current = e.touches[0].clientY
   }
 
   const handleTouchEnd = () => {
+    if (!isSwiping.current) return
+
     const diff = touchStartY.current - touchEndY.current
 
-    if (Math.abs(diff) > 80) {
+    if (Math.abs(diff) > 100) {
       if (diff > 0 && currentIndex < services.length - 1) {
         setCurrentIndex(currentIndex + 1)
         setShowComments(false)
@@ -129,11 +136,17 @@ export function TikTokServiceViewer({
         setShowComments(false)
       }
     }
+
+    isSwiping.current = false
+    touchStartY.current = 0
+    touchEndY.current = 0
   }
 
   const currentService = services[currentIndex]
 
-  const handleLike = async () => {
+  const handleLike = async (e: React.MouseEvent) => {
+    e.stopPropagation()
+
     if (!userId) {
       alert("يجب تسجيل الدخول للإعجاب")
       return
@@ -153,7 +166,9 @@ export function TikTokServiceViewer({
     setLikes({ ...likes, [currentIndex]: !isLiked })
   }
 
-  const handleSave = async () => {
+  const handleSave = async (e: React.MouseEvent) => {
+    e.stopPropagation()
+
     if (!userId) {
       alert("يجب تسجيل الدخول للحفظ")
       return
@@ -171,7 +186,8 @@ export function TikTokServiceViewer({
     setSaved({ ...saved, [currentIndex]: !isSaved })
   }
 
-  const handleShowComments = () => {
+  const handleShowComments = (e: React.MouseEvent) => {
+    e.stopPropagation()
     loadComments(currentService.id)
     setShowComments(true)
   }
@@ -190,9 +206,35 @@ export function TikTokServiceViewer({
     loadComments(currentService.id)
   }
 
-  const handleRequestService = () => {
+  const handleRequestService = (e: React.MouseEvent) => {
+    e.stopPropagation()
+
+    const storedUserId = localStorage.getItem("user_id")
+    if (!storedUserId) {
+      alert("يجب تسجيل الدخول أولاً لطلب الخدمة")
+      router.push("/login")
+      return
+    }
+
     const publisherId = currentService.publisher_user_id || currentService.agent_user_id || "service_account"
-    router.push(`/messages/${publisherId}`)
+
+    if (publisherId === storedUserId) {
+      alert("لا يمكنك مراسلة نفسك")
+      return
+    }
+
+    const serviceData = {
+      id: currentService.id,
+      title: currentService.title,
+      media_url: currentService.media_url || currentService.file_url,
+      description: currentService.description,
+      file_type: currentService.file_type,
+    }
+
+    const encodedService = encodeURIComponent(JSON.stringify(serviceData))
+    const returnPath = encodeURIComponent(pathname)
+
+    router.push(`/messages/${publisherId}?service=${encodedService}&return=${returnPath}`)
   }
 
   if (!currentService) {
@@ -204,24 +246,23 @@ export function TikTokServiceViewer({
     videoUrl && (videoUrl.includes(".mp4") || videoUrl.includes(".mov") || currentService.file_type === "video")
 
   return (
-    <div
-      ref={containerRef}
-      onTouchStart={handleTouchStart}
-      onTouchMove={handleTouchMove}
-      onTouchEnd={handleTouchEnd}
-      className="relative w-full h-screen bg-black flex items-center justify-center overflow-hidden touch-none"
-    >
-      <div className="w-full h-full relative">
+    <div className="relative w-full h-screen bg-black flex flex-col overflow-hidden">
+      <div
+        ref={swipeAreaRef}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+        className="flex-1 relative touch-pan-y"
+      >
         {isVideo ? (
           <video
             key={currentService.id}
             src={videoUrl}
-            className="w-full h-full object-cover" // تم التعديل هنا
+            className="w-full h-full object-contain pointer-events-auto"
             controls
             autoPlay
             loop
             playsInline
-            muted // **تمت إضافة هذه الخاصية**
           />
         ) : (
           <div className="w-full h-full bg-gradient-to-br from-[#B38C8A] to-[#D4AF37] flex items-center justify-center">
@@ -235,59 +276,78 @@ export function TikTokServiceViewer({
           </div>
         )}
 
-        <div className="absolute bottom-0 left-0 right-0 px-4 pb-6 pt-8 bg-gradient-to-t from-black via-black/80 to-transparent z-10">
+        <div className="absolute bottom-0 left-0 right-16 px-4 pb-4 pt-8 bg-gradient-to-t from-black via-black/80 to-transparent z-10 pointer-events-none">
           <h3 className="font-bold text-white text-lg mb-1">{currentService.title}</h3>
-          <p className="text-sm text-white/90 mb-4">{currentService.description}</p>
-
-          <button
-            onClick={handleRequestService}
-            className="w-full bg-[#D4AF37] text-white font-bold py-3 rounded-xl hover:bg-[#D4AF37]/90 transition-colors flex items-center justify-center gap-2"
-          >
-            <Send className="w-5 h-5" />
-            اطلب الآن
-          </button>
+          <p className="text-sm text-white/90">{currentService.description}</p>
         </div>
 
-        <div className="absolute right-2 bottom-40 flex flex-col gap-6 z-10">
-          <button onClick={handleLike} className="flex flex-col items-center gap-1 text-white drop-shadow-lg">
+        <div className="absolute right-2 bottom-20 flex flex-col gap-5 z-20">
+          <button
+            onClick={handleLike}
+            onTouchEnd={(e) => e.stopPropagation()}
+            className="flex flex-col items-center gap-1 text-white drop-shadow-lg"
+          >
             <div
-              className={`w-12 h-12 rounded-full flex items-center justify-center transition-colors ${likes[currentIndex] ? "bg-red-500" : "bg-white/20"}`}
+              className={`w-11 h-11 rounded-full flex items-center justify-center transition-colors ${likes[currentIndex] ? "bg-red-500" : "bg-white/20"}`}
             >
-              <Heart className="w-6 h-6" fill={likes[currentIndex] ? "white" : "none"} />
+              <Heart className="w-5 h-5" fill={likes[currentIndex] ? "white" : "none"} />
             </div>
             <span className="text-xs font-bold">{likesCount[currentIndex] || 0}</span>
           </button>
 
-          <button onClick={handleShowComments} className="flex flex-col items-center gap-1 text-white drop-shadow-lg">
-            <div className="w-12 h-12 rounded-full bg-white/20 flex items-center justify-center">
-              <MessageCircle className="w-6 h-6" />
+          <button
+            onClick={handleShowComments}
+            onTouchEnd={(e) => e.stopPropagation()}
+            className="flex flex-col items-center gap-1 text-white drop-shadow-lg"
+          >
+            <div className="w-11 h-11 rounded-full bg-white/20 flex items-center justify-center">
+              <MessageCircle className="w-5 h-5" />
             </div>
             <span className="text-xs">تعليق</span>
           </button>
 
-          <button onClick={handleSave} className="flex flex-col items-center gap-1 text-white drop-shadow-lg">
+          <button
+            onClick={handleSave}
+            onTouchEnd={(e) => e.stopPropagation()}
+            className="flex flex-col items-center gap-1 text-white drop-shadow-lg"
+          >
             <div
-              className={`w-12 h-12 rounded-full flex items-center justify-center transition-colors ${saved[currentIndex] ? "bg-[#D4AF37]" : "bg-white/20"}`}
+              className={`w-11 h-11 rounded-full flex items-center justify-center transition-colors ${saved[currentIndex] ? "bg-[#D4AF37]" : "bg-white/20"}`}
             >
-              <Bookmark className="w-6 h-6" fill={saved[currentIndex] ? "white" : "none"} />
+              <Bookmark className="w-5 h-5" fill={saved[currentIndex] ? "white" : "none"} />
             </div>
             <span className="text-xs">حفظ</span>
           </button>
         </div>
 
-        {/* عداد الموضع */}
-        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 text-white text-sm bg-black/50 px-3 py-1 rounded-full">
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 text-white text-sm bg-black/50 px-3 py-1 rounded-full pointer-events-none">
           {currentIndex + 1} / {services.length}
         </div>
 
-        {/* مؤشر السحب */}
-        <div className="absolute top-16 left-1/2 -translate-x-1/2 z-20 text-white/50 text-xs">
+        <div className="absolute top-12 left-1/2 -translate-x-1/2 z-20 text-white/50 text-xs pointer-events-none">
           اسحب للأعلى أو الأسفل
         </div>
       </div>
 
+      {!showComments && (
+        <div className="w-full bg-black px-4 py-3 safe-area-bottom">
+          <button
+            onClick={handleRequestService}
+            className="w-full bg-[#D4AF37] text-white font-bold py-4 rounded-xl hover:bg-[#D4AF37]/90 transition-colors flex items-center justify-center gap-2 text-lg shadow-lg"
+          >
+            <Send className="w-6 h-6" />
+            اطلب الآن
+          </button>
+        </div>
+      )}
+
       {showComments && (
-        <div className="absolute inset-0 bg-black/90 z-50 flex flex-col">
+        <div
+          className="absolute bottom-0 left-0 right-0 h-[60vh] bg-black/95 z-50 flex flex-col rounded-t-3xl shadow-2xl"
+          onTouchStart={(e) => e.stopPropagation()}
+          onTouchMove={(e) => e.stopPropagation()}
+          onTouchEnd={(e) => e.stopPropagation()}
+        >
           <div className="flex items-center justify-between p-4 border-b border-white/20">
             <h3 className="text-white font-bold text-lg">التعليقات</h3>
             <button onClick={() => setShowComments(false)} className="text-white">
@@ -316,7 +376,7 @@ export function TikTokServiceViewer({
           </div>
 
           {userId && (
-            <div className="p-4 border-t border-white/20 flex gap-2">
+            <div className="p-4 border-t border-white/20 flex gap-2 safe-area-bottom">
               <input
                 type="text"
                 value={newComment}

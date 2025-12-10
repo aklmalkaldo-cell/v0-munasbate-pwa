@@ -9,7 +9,7 @@ import { TopHeader } from "@/components/top-header"
 import { BottomNav } from "@/components/bottom-nav"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
-import { ImageIcon, X } from "lucide-react"
+import { ImageIcon, X, Loader2 } from "lucide-react"
 import Image from "next/image"
 
 export default function CreatePostPage() {
@@ -18,12 +18,12 @@ export default function CreatePostPage() {
   const [imagePreview, setImagePreview] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [isGuest, setIsGuest] = useState(true)
+  const [isUploading, setIsUploading] = useState(false)
+  const [uploadMessage, setUploadMessage] = useState("")
 
   useEffect(() => {
     const userId = localStorage.getItem("user_id")
     const guestStatus = localStorage.getItem("is_guest") === "true"
-
-    console.log("[v0] صفحة إنشاء منشور - user_id:", userId, "is_guest:", guestStatus)
 
     if (!userId) {
       router.push("/")
@@ -56,29 +56,34 @@ export default function CreatePostPage() {
       return
     }
 
-    setIsLoading(true)
-    const supabase = createClient()
-
     const currentUserId = localStorage.getItem("user_id")
 
+    setIsLoading(true)
+    setUploadMessage("جاري نشر المنشور...")
+
+    // حفظ البيانات للرفع
+    const postContent = content
+    const postImage = imagePreview
+
+    // الانتقال لصفحة المنشورات فوراً
+    router.push("/posts")
+
+    // إكمال الرفع في الخلفية
+    const supabase = createClient()
+
     try {
-      const { data, error } = await supabase
-        .from("posts")
-        .insert({
-          author_user_id: currentUserId,
-          content,
-          image_url: imagePreview,
-        })
-        .select()
+      const { error } = await supabase.from("posts").insert({
+        author_user_id: currentUserId,
+        content: postContent,
+        image_url: postImage,
+      })
 
-      if (error) throw error
-
-      alert("تم نشر المنشور بنجاح!")
-      window.location.href = "/home"
+      if (error) {
+        console.log("[v0] خطأ في النشر:", error)
+        // يمكن إضافة إشعار للمستخدم هنا
+      }
     } catch (error: any) {
       console.error("[v0] خطأ في النشر:", error)
-      alert("حدث خطأ: " + (error.message || "خطأ غير معروف"))
-      setIsLoading(false)
     }
   }
 
@@ -86,9 +91,16 @@ export default function CreatePostPage() {
     <div className="min-h-screen bg-[#F5E9E8] pb-20">
       <TopHeader />
 
+      {isLoading && (
+        <div className="fixed top-16 left-0 right-0 z-50 bg-[#D4AF37] text-white py-2 px-4 flex items-center justify-center gap-2 text-sm">
+          <Loader2 className="w-4 h-4 animate-spin" />
+          <span>{uploadMessage}</span>
+        </div>
+      )}
+
       <main className="pt-20 px-4 max-w-screen-xl mx-auto">
         <div className="flex items-center justify-between mb-6">
-          <Button onClick={() => router.back()} variant="ghost" className="text-[#B38C8A]">
+          <Button onClick={() => router.push("/posts")} variant="ghost" className="text-[#B38C8A]">
             إلغاء
           </Button>
           <h1 className="text-xl font-bold text-[#B38C8A]">منشور جديد</h1>
@@ -97,7 +109,14 @@ export default function CreatePostPage() {
             disabled={isLoading || !content.trim()}
             className="bg-[#D4AF37] hover:bg-[#B8941F] text-white"
           >
-            {isLoading ? "جاري النشر..." : "نشر"}
+            {isLoading ? (
+              <>
+                <Loader2 className="w-4 h-4 ml-2 animate-spin" />
+                جاري النشر
+              </>
+            ) : (
+              "نشر"
+            )}
           </Button>
         </div>
 

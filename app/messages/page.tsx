@@ -37,17 +37,17 @@ const SERVICE_ACCOUNTS = [
 
 export default function MessagesPage() {
   const router = useRouter()
-  const [isLoading, setIsLoading] = useState(true)
   const [isGuest, setIsGuest] = useState(false)
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
   const [userConversations, setUserConversations] = useState<any[]>([])
+  const [conversationsLoading, setConversationsLoading] = useState(true)
 
   useEffect(() => {
     const userId = localStorage.getItem("user_id")
     const guestMode = localStorage.getItem("is_guest") === "true"
 
     if (!userId) {
-      router.push("/")
+      router.replace("/")
       return
     }
 
@@ -68,7 +68,6 @@ export default function MessagesPage() {
 
       if (error) throw error
 
-      // الحصول على جميع معرفات المستخدمين الآخرين الفريدة
       const otherUserIds = new Set<string>()
       data.forEach((msg: any) => {
         if (msg.sender_user_id !== userId) {
@@ -81,18 +80,10 @@ export default function MessagesPage() {
 
       setUserConversations(Array.from(otherUserIds))
     } catch (error) {
-      console.error("خطأ في جلب المحادثات:", error)
+      // تجاهل الخطأ
     } finally {
-      setIsLoading(false)
+      setConversationsLoading(false)
     }
-  }
-
-  if (isLoading) {
-    return (
-      <div className="min-h-screen bg-[#F5E9E8] flex items-center justify-center">
-        <p className="text-[#B38C8A]">جاري التحميل...</p>
-      </div>
-    )
   }
 
   return (
@@ -110,7 +101,7 @@ export default function MessagesPage() {
           </div>
         )}
 
-        {/* حسابات الخدمة */}
+        {/* حسابات الخدمة - تظهر مباشرة */}
         <div className="mb-4">
           <h2 className="text-sm font-semibold text-[#B38C8A] px-4 mb-2">خدمة العملاء</h2>
           <div className="bg-white">
@@ -125,28 +116,38 @@ export default function MessagesPage() {
           </div>
         </div>
 
-        {userConversations.length > 0 && (
+        {conversationsLoading ? (
           <div className="mb-4">
-            <h2 className="text-sm font-semibold text-[#B38C8A] px-4 mb-2">محادثات أخرى</h2>
+            <div className="h-5 w-24 bg-[#B38C8A]/20 rounded mx-4 mb-2 animate-pulse" />
             <div className="bg-white">
-              {userConversations.map((userId) => (
-                <ChatListItem
-                  key={userId}
-                  userId={userId}
-                  displayName={`المستخدم ${userId}`}
-                  lastMessage="محادثة نشطة"
-                />
+              {[1, 2, 3].map((i) => (
+                <div key={i} className="flex items-center gap-3 p-4 border-b border-[#B38C8A]/10 animate-pulse">
+                  <div className="w-12 h-12 rounded-full bg-[#B38C8A]/20" />
+                  <div className="flex-1">
+                    <div className="h-4 w-32 bg-[#B38C8A]/20 rounded mb-2" />
+                    <div className="h-3 w-48 bg-[#B38C8A]/10 rounded" />
+                  </div>
+                </div>
               ))}
             </div>
           </div>
-        )}
-
-        <div className="px-4">
-          <div className="bg-white rounded-2xl p-8 text-center">
-            <p className="text-[#B38C8A]/70">لا توجد محادثات أخرى</p>
-            <p className="text-sm text-[#B38C8A]/50 mt-2">ابدأ محادثة مع خدمة العملاء</p>
+        ) : userConversations.length > 0 ? (
+          <div className="mb-4">
+            <h2 className="text-sm font-semibold text-[#B38C8A] px-4 mb-2">محادثات أخرى</h2>
+            <div className="bg-white">
+              {userConversations.map((uId) => (
+                <ChatListItem key={uId} userId={uId} displayName={`المستخدم ${uId}`} lastMessage="محادثة نشطة" />
+              ))}
+            </div>
           </div>
-        </div>
+        ) : (
+          <div className="px-4">
+            <div className="bg-white rounded-2xl p-8 text-center">
+              <p className="text-[#B38C8A]/70">لا توجد محادثات أخرى</p>
+              <p className="text-sm text-[#B38C8A]/50 mt-2">ابدأ محادثة مع خدمة العملاء</p>
+            </div>
+          </div>
+        )}
 
         {!isGuest && (
           <div className="fixed bottom-24 left-4 z-40">

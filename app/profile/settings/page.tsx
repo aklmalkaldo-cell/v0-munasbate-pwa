@@ -1,5 +1,7 @@
 "use client"
 
+import type React from "react"
+
 import { useState, useEffect } from "react"
 import { createClient } from "@/lib/supabase/client"
 import { useRouter } from "next/navigation"
@@ -24,6 +26,13 @@ export default function SettingsPage() {
   const [isLoading, setIsLoading] = useState(false)
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
 
+  const [avatarFile, setAvatarFile] = useState<File | null>(null)
+  const [coverFile, setCoverFile] = useState<File | null>(null)
+  const [avatarPreview, setAvatarPreview] = useState<string>("")
+  const [coverPreview, setCoverPreview] = useState<string>("")
+  const [currentAvatarUrl, setCurrentAvatarUrl] = useState<string>("")
+  const [currentCoverUrl, setCurrentCoverUrl] = useState<string>("")
+
   useEffect(() => {
     const userId = localStorage.getItem("user_id")
     const isGuest = localStorage.getItem("is_guest") === "true"
@@ -38,7 +47,6 @@ export default function SettingsPage() {
   }, [])
 
   const loadUserData = async (userId: string) => {
-    console.log("[v0] جلب بيانات المستخدم:", userId)
     const { data: userData, error } = await supabase.from("app_users").select("*").eq("user_id", userId).single()
 
     if (error) {
@@ -46,14 +54,57 @@ export default function SettingsPage() {
       return
     }
 
-    console.log("[v0] تم جلب البيانات:", userData)
     if (userData) {
       setDisplayName(userData.username || "")
       setBio(userData.bio || "")
       setEmail(userData.email || "")
       setPhone(userData.phone || "")
       setIsPrivate(userData.is_private || false)
+      setCurrentAvatarUrl(userData.avatar_url || "")
+      setCurrentCoverUrl(userData.cover_url || "")
     }
+  }
+
+  const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file) {
+      setAvatarFile(file)
+      const reader = new FileReader()
+      reader.onloadend = () => {
+        setAvatarPreview(reader.result as string)
+      }
+      reader.readAsDataURL(file)
+    }
+  }
+
+  const handleCoverChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file) {
+      setCoverFile(file)
+      const reader = new FileReader()
+      reader.onloadend = () => {
+        setCoverPreview(reader.result as string)
+      }
+      reader.readAsDataURL(file)
+    }
+  }
+
+  const uploadImage = async (file: File, bucket: string, userId: string): Promise<string> => {
+    const fileExt = file.name.split(".").pop()
+    const fileName = `${userId}-${Date.now()}.${fileExt}`
+
+    const { error: uploadError } = await supabase.storage.from(bucket).upload(fileName, file, {
+      cacheControl: "3600",
+      upsert: true,
+    })
+
+    if (uploadError) throw uploadError
+
+    const {
+      data: { publicUrl },
+    } = supabase.storage.from(bucket).getPublicUrl(fileName)
+
+    return publicUrl
   }
 
   const handleSave = async () => {
@@ -63,9 +114,20 @@ export default function SettingsPage() {
     }
 
     setIsLoading(true)
-    console.log("[v0] حفظ التغييرات للمستخدم:", currentUserId)
 
     try {
+      // رفع الصور إذا تم اختيارها
+      let avatarUrl = currentAvatarUrl
+      let coverUrl = currentCoverUrl
+
+      if (avatarFile) {
+        avatarUrl = await uploadImage(avatarFile, "avatars", currentUserId)
+      }
+
+      if (coverFile) {
+        coverUrl = await uploadImage(coverFile, "covers", currentUserId)
+      }
+
       const { error } = await supabase
         .from("app_users")
         .update({
@@ -74,20 +136,21 @@ export default function SettingsPage() {
           email,
           phone,
           is_private: isPrivate,
+          avatar_url: avatarUrl,
+          cover_url: coverUrl,
         })
         .eq("user_id", currentUserId)
 
       if (error) {
-        console.error("[v0] خطأ في الحفظ:", error)
         throw error
       }
-
-      console.log("[v0] تم الحفظ بنجاح")
 
       localStorage.setItem("username", displayName)
 
       alert("تم حفظ التغييرات بنجاح")
-      window.location.href = "/profile"
+
+      router.push("/profile")
+      router.refresh() // تحديث بيانات الصفحة
     } catch (error: any) {
       console.error("[v0] خطأ:", error)
       alert("حدث خطأ أثناء الحفظ: " + (error.message || "خطأ غير معروف"))
@@ -111,6 +174,63 @@ export default function SettingsPage() {
         <h1 className="text-2xl font-bold text-[#B38C8A] mb-6">الإعدادات</h1>
 
         <div className="space-y-6">
+          <div className="bg-white rounded-2xl p-6">
+            <h2 className="text-lg font-semibold text-[#B38C8A] mb-4">الصور</h2>
+            <div className="space-y-6">
+              {/* صورة الخلفية */}
+              <div>
+                <Label className="text-[#B38C8A] mb-2 block">صورة الخلفية</Label>
+                <div className="relative w-full h-32 bg-[#F5E9E8] rounded-xl overflow-hidden mb-2">
+                  {coverPreview || currentCoverUrl ? (
+                    <img
+                      src={coverPreview || currentCoverUrl}
+                      alt="Cover preview"
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center text-[#B38C8A]/50">
+                      لا توجد صورة خلفية
+                    </div>
+                  )}
+                </div>
+                <Input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleCoverChange}
+                  className="bg-[#F5E9E8] border-[#B38C8A]/20"
+                />
+              </div>
+
+              {/* الصورة الشخصية */}
+              <div>
+                <Label className="text-[#B38C8A] mb-2 block">الصورة الشخصية</Label>
+                <div className="flex items-center gap-4 mb-2">
+                  <div className="w-24 h-24 rounded-full bg-[#F5E9E8] overflow-hidden flex-shrink-0">
+                    {avatarPreview || currentAvatarUrl ? (
+                      <img
+                        src={avatarPreview || currentAvatarUrl}
+                        alt="Avatar preview"
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center text-3xl text-[#D4AF37]">
+                        {displayName?.charAt(0) || "؟"}
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex-1">
+                    <Input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleAvatarChange}
+                      className="bg-[#F5E9E8] border-[#B38C8A]/20"
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
           {/* تعديل الملف الشخصي */}
           <div className="bg-white rounded-2xl p-6">
             <h2 className="text-lg font-semibold text-[#B38C8A] mb-4">تعديل الملف الشخصي</h2>
