@@ -20,6 +20,7 @@ export default function ManageServicePage() {
   const [userId, setUserId] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [pageLoading, setPageLoading] = useState(true)
   const [formData, setFormData] = useState({
     serviceName: "",
     description: "",
@@ -42,20 +43,27 @@ export default function ManageServicePage() {
   }, [router, serviceId])
 
   const loadService = async (uid: string) => {
-    const supabase = createClient()
-    const { data, error } = await supabase.from("user_services").select("*").eq("id", serviceId).single()
+    try {
+      const supabase = createClient()
+      const { data, error } = await supabase.from("user_services").select("*").eq("id", serviceId).single()
 
-    if (error || !data || data.user_id !== uid) {
+      if (error || !data || data.user_id !== uid) {
+        router.replace("/services/other")
+        return
+      }
+
+      setFormData({
+        serviceName: data.name || "",
+        description: data.description || "",
+      })
+      setExistingProfileImage(data.avatar_url || null)
+      setExistingCoverImage(data.cover_url || null)
+    } catch (error) {
+      console.error("Error loading service:", error)
       router.replace("/services/other")
-      return
+    } finally {
+      setPageLoading(false)
     }
-
-    setFormData({
-      serviceName: data.service_name,
-      description: data.description || "",
-    })
-    setExistingProfileImage(data.profile_image)
-    setExistingCoverImage(data.cover_image)
   }
 
   const handleProfileImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -107,20 +115,20 @@ export default function ManageServicePage() {
     try {
       const supabase = createClient()
 
-      const updateData: any = {
-        service_name: formData.serviceName.trim(),
+      const updateData: Record<string, string> = {
+        name: formData.serviceName.trim(),
         description: formData.description.trim(),
         updated_at: new Date().toISOString(),
       }
 
       if (profileImage) {
         const profileUrl = await uploadImage(profileImage, "profiles")
-        if (profileUrl) updateData.profile_image = profileUrl
+        if (profileUrl) updateData.avatar_url = profileUrl
       }
 
       if (coverImage) {
         const coverUrl = await uploadImage(coverImage, "covers")
-        if (coverUrl) updateData.cover_image = coverUrl
+        if (coverUrl) updateData.cover_url = coverUrl
       }
 
       const { error } = await supabase.from("user_services").update(updateData).eq("id", serviceId)
@@ -156,6 +164,17 @@ export default function ManageServicePage() {
     } finally {
       setDeleting(false)
     }
+  }
+
+  if (pageLoading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-[#F5E9E8] via-[#FDF8F7] to-[#F5E9E8] flex items-center justify-center">
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-10 h-10 border-3 border-[#B38C8A] border-t-transparent rounded-full animate-spin" />
+          <div className="text-[#B38C8A]">جاري التحميل...</div>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -197,7 +216,7 @@ export default function ManageServicePage() {
                   <Image src={profilePreview || existingProfileImage!} alt="profile" fill className="object-cover" />
                 ) : (
                   <div className="w-full h-full flex items-center justify-center text-white text-3xl font-bold">
-                    {formData.serviceName[0] || "؟"}
+                    {formData.serviceName?.charAt(0) || "؟"}
                   </div>
                 )}
                 <label className="absolute inset-0 flex items-center justify-center cursor-pointer bg-black/20 hover:bg-black/30 transition-colors">

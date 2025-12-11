@@ -9,7 +9,7 @@ import { TopHeader } from "@/components/top-header"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
-import { ChevronLeft, Camera, ImageIcon } from "lucide-react"
+import { ChevronLeft, Camera, ImageIcon, AlertCircle } from "lucide-react"
 import Image from "next/image"
 
 export default function CreateUserServicePage() {
@@ -17,6 +17,7 @@ export default function CreateUserServicePage() {
   const [userId, setUserId] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [checking, setChecking] = useState(true)
+  const [dbError, setDbError] = useState<string | null>(null)
   const [formData, setFormData] = useState({
     serviceName: "",
     description: "",
@@ -28,18 +29,23 @@ export default function CreateUserServicePage() {
 
   useEffect(() => {
     const initPage = async () => {
-      const storedUserId = localStorage.getItem("user_id")
-      const isGuest = localStorage.getItem("is_guest") === "true"
+      try {
+        const storedUserId = localStorage.getItem("user_id")
+        const isGuest = localStorage.getItem("is_guest") === "true"
 
-      if (!storedUserId || isGuest) {
-        alert("يجب تسجيل الدخول لإنشاء خدمة")
-        router.push("/auth/login")
-        return
+        if (!storedUserId || isGuest) {
+          alert("يجب تسجيل الدخول لإنشاء خدمة")
+          router.push("/auth/login")
+          return
+        }
+
+        setUserId(storedUserId)
+        await checkExistingService(storedUserId)
+      } catch (error) {
+        console.error("Init error:", error)
+      } finally {
+        setChecking(false)
       }
-
-      setUserId(storedUserId)
-      await checkExistingService(storedUserId)
-      setChecking(false)
     }
 
     initPage()
@@ -48,10 +54,19 @@ export default function CreateUserServicePage() {
   const checkExistingService = async (uid: string) => {
     try {
       const supabase = createClient()
-      const { data, error } = await supabase.from("user_services").select("id").eq("user_id", uid).single()
+      const { data, error } = await supabase.from("user_services").select("id").eq("user_id", uid).maybeSingle()
 
-      if (error && error.code !== "PGRST116" && error.code !== "42P01") {
-        console.error("Error checking service:", error)
+      if (error) {
+        if (error.code === "42P01") {
+          // الجدول غير موجود
+          setDbError("جدول الخدمات غير موجود. يرجى تشغيل سكريبت إنشاء الجداول.")
+        } else if (error.code === "42703") {
+          // عمود غير موجود
+          setDbError("هناك مشكلة في هيكل قاعدة البيانات. يرجى التواصل مع الدعم.")
+        } else {
+          console.error("Error checking service:", error)
+        }
+        return
       }
 
       if (data) {
@@ -129,7 +144,11 @@ export default function CreateUserServicePage() {
     try {
       const supabase = createClient()
 
-      const { data: existingService } = await supabase.from("user_services").select("id").eq("user_id", userId).single()
+      const { data: existingService } = await supabase
+        .from("user_services")
+        .select("id")
+        .eq("user_id", userId)
+        .maybeSingle()
 
       if (existingService) {
         alert("لديك خدمة بالفعل!")
@@ -158,10 +177,10 @@ export default function CreateUserServicePage() {
 
       const insertData = {
         user_id: userId,
-        name: serviceName, // بدلاً من service_name
+        name: serviceName,
         description: formData.description.trim() || null,
-        avatar_url: profileImageUrl, // بدلاً من profile_image
-        cover_url: coverImageUrl, // بدلاً من cover_image
+        avatar_url: profileImageUrl,
+        cover_url: coverImageUrl,
       }
 
       const { data, error } = await supabase.from("user_services").insert(insertData).select().single()
@@ -173,7 +192,7 @@ export default function CreateUserServicePage() {
         } else if (error.code === "42501") {
           alert("ليس لديك صلاحية لإنشاء خدمة. تأكد من تسجيل الدخول.")
         } else if (error.code === "42P01") {
-          alert("لم يتم إعداد قاعدة البيانات بعد. يرجى التواصل مع الدعم الفني.")
+          alert("لم يتم إعداد قاعدة البيانات بعد. يرجى تشغيل سكريبت إنشاء الجداول.")
         } else {
           alert("حدث خطأ: " + error.message)
         }
@@ -187,6 +206,30 @@ export default function CreateUserServicePage() {
     } finally {
       setLoading(false)
     }
+  }
+
+  if (dbError) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-[#F5E9E8] via-[#FDF8F7] to-[#F5E9E8]">
+        <TopHeader />
+        <main className="pt-20 px-4 pb-8 max-w-screen-md mx-auto">
+          <div className="flex items-center gap-3 mb-6">
+            <button onClick={() => router.back()} className="text-[#B38C8A]">
+              <ChevronLeft className="w-6 h-6" />
+            </button>
+            <h1 className="text-2xl font-bold text-[#B38C8A]">إنشاء خدمتي</h1>
+          </div>
+          <div className="bg-red-50 border border-red-200 rounded-xl p-6 text-center">
+            <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />
+            <h2 className="text-lg font-bold text-red-700 mb-2">خطأ في قاعدة البيانات</h2>
+            <p className="text-red-600 mb-4">{dbError}</p>
+            <Button onClick={() => router.back()} variant="outline" className="border-red-300 text-red-600">
+              العودة
+            </Button>
+          </div>
+        </main>
+      </div>
+    )
   }
 
   if (checking) {

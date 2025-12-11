@@ -1,60 +1,54 @@
 "use client"
 
-import { useEffect, useState, Suspense } from "react"
-import { useParams, useRouter, usePathname } from "next/navigation"
+import { useState, useEffect } from "react"
+import { useParams, useRouter } from "next/navigation"
 import { createClient } from "@/lib/supabase/client"
 import { TopHeader } from "@/components/top-header"
 import { BottomNav } from "@/components/bottom-nav"
 import { Button } from "@/components/ui/button"
 import {
   ChevronLeft,
-  FileVideo,
-  Plus,
   Settings,
-  Music,
-  Video,
-  ImageIcon,
-  Grid3X3,
+  Upload,
   Heart,
   MessageCircle,
-  Bookmark,
-  Send,
-  X,
   Play,
+  Video,
+  Music,
+  ImageIcon,
+  Grid3X3,
+  Users,
 } from "lucide-react"
-import Image from "next/image"
-import Link from "next/link"
+import { VerifiedBadge, isVerifiedUser } from "@/components/verified-badge"
 
 interface UserService {
   id: string
   user_id: string
-  name: string // بدلاً من service_name
+  name: string
   description: string
-  avatar_url: string | null // بدلاً من profile_image
-  cover_url: string | null // بدلاً من cover_image
+  avatar_url: string
+  cover_url: string
   followers_count: number
   content_count: number
+  created_at: string
 }
 
 interface ServiceContent {
   id: string
+  service_id: string
   title: string
-  description: string
-  content_type: "audio" | "video" | "image"
-  file_url: string
-  thumbnail_url: string | null
+  content_type: "video" | "audio" | "image"
+  content_url: string
   likes_count: number
   comments_count: number
-  views_count: number
   created_at: string
 }
 
-type FilterType = "all" | "audio" | "video" | "image"
+type FilterType = "all" | "video" | "audio" | "image"
 
-function ServicePageContent() {
+export default function ServicePage() {
   const params = useParams()
   const router = useRouter()
-  const pathname = usePathname()
   const serviceId = params.serviceId as string
 
   const [userId, setUserId] = useState<string | null>(null)
@@ -65,17 +59,12 @@ function ServicePageContent() {
   const [isOwner, setIsOwner] = useState(false)
   const [isFollowing, setIsFollowing] = useState(false)
   const [activeFilter, setActiveFilter] = useState<FilterType>("all")
-  const [selectedContent, setSelectedContent] = useState<ServiceContent | null>(null)
   const [likes, setLikes] = useState<{ [key: string]: boolean }>({})
   const [saves, setSaves] = useState<{ [key: string]: boolean }>({})
-  const [showComments, setShowComments] = useState(false)
-  const [comments, setComments] = useState<any[]>([])
-  const [newComment, setNewComment] = useState("")
 
   useEffect(() => {
-    const reservedPaths = ["create", "manage", "upload", "edit", "new"]
-    if (reservedPaths.includes(serviceId)) {
-      // هذا المسار يجب أن يُعالج بواسطة صفحة أخرى
+    const reservedWords = ["create", "manage", "upload", "edit", "new"]
+    if (reservedWords.includes(serviceId?.toLowerCase())) {
       return
     }
 
@@ -96,7 +85,6 @@ function ServicePageContent() {
     const supabase = createClient()
 
     try {
-      // جلب بيانات الخدمة
       const { data: serviceData, error: serviceError } = await supabase
         .from("user_services")
         .select("*")
@@ -107,40 +95,38 @@ function ServicePageContent() {
       setService(serviceData)
       setIsOwner(currentUserId === serviceData.user_id)
 
-      // جلب محتوى الخدمة
-      const { data: contentData } = await supabase
+      const { data: contentData, error: contentError } = await supabase
         .from("user_service_content")
         .select("*")
-        .eq("user_service_id", serviceId)
-        .eq("is_active", true)
+        .eq("service_id", serviceId)
         .order("created_at", { ascending: false })
+
+      console.log("[v0] Content query result:", { contentData, contentError })
 
       setContents(contentData || [])
       setFilteredContents(contentData || [])
 
-      // التحقق من المتابعة
       if (currentUserId) {
         const { data: followData } = await supabase
-          .from("user_service_follows")
+          .from("user_service_followers")
           .select("id")
-          .eq("user_service_id", serviceId)
-          .eq("follower_user_id", currentUserId)
+          .eq("service_id", serviceId)
+          .eq("follower_id", currentUserId)
           .single()
 
         setIsFollowing(!!followData)
 
-        // جلب الإعجابات والحفظ
-        if (contentData) {
+        if (contentData && contentData.length > 0) {
           const contentIds = contentData.map((c) => c.id)
 
           const { data: likesData } = await supabase
-            .from("user_service_content_likes")
+            .from("user_service_likes")
             .select("content_id")
             .eq("user_id", currentUserId)
             .in("content_id", contentIds)
 
           const { data: savesData } = await supabase
-            .from("user_service_content_saves")
+            .from("user_service_favorites")
             .select("content_id")
             .eq("user_id", currentUserId)
             .in("content_id", contentIds)
@@ -164,161 +150,125 @@ function ServicePageContent() {
 
   const handleFollow = async () => {
     if (!userId) {
-      alert("يجب تسجيل الدخول للمتابعة")
+      router.push("/auth/login")
       return
     }
 
     const supabase = createClient()
 
-    if (isFollowing) {
-      await supabase
-        .from("user_service_follows")
-        .delete()
-        .eq("user_service_id", serviceId)
-        .eq("follower_user_id", userId)
-    } else {
-      await supabase.from("user_service_follows").insert({ user_service_id: serviceId, follower_user_id: userId })
-    }
+    try {
+      if (isFollowing) {
+        await supabase.from("user_service_followers").delete().eq("service_id", serviceId).eq("follower_id", userId)
+      } else {
+        await supabase.from("user_service_followers").insert({
+          service_id: serviceId,
+          follower_id: userId,
+        })
+      }
+      setIsFollowing(!isFollowing)
 
-    setIsFollowing(!isFollowing)
-    if (service) {
-      setService({
-        ...service,
-        followers_count: isFollowing ? service.followers_count - 1 : service.followers_count + 1,
-      })
+      if (service) {
+        setService({
+          ...service,
+          followers_count: isFollowing ? service.followers_count - 1 : service.followers_count + 1,
+        })
+      }
+    } catch (error) {
+      console.error("Error following:", error)
     }
   }
 
   const handleLike = async (contentId: string) => {
     if (!userId) {
-      alert("يجب تسجيل الدخول للإعجاب")
+      router.push("/auth/login")
       return
     }
 
     const supabase = createClient()
     const isLiked = likes[contentId]
 
-    if (isLiked) {
-      await supabase.from("user_service_content_likes").delete().eq("content_id", contentId).eq("user_id", userId)
-    } else {
-      await supabase.from("user_service_content_likes").insert({ content_id: contentId, user_id: userId })
-    }
+    try {
+      if (isLiked) {
+        await supabase.from("user_service_likes").delete().eq("content_id", contentId).eq("user_id", userId)
+      } else {
+        await supabase.from("user_service_likes").insert({
+          content_id: contentId,
+          user_id: userId,
+        })
+      }
 
-    setLikes({ ...likes, [contentId]: !isLiked })
+      setLikes((prev) => ({ ...prev, [contentId]: !isLiked }))
 
-    // تحديث العداد في المحتوى المحدد
-    if (selectedContent?.id === contentId) {
-      setSelectedContent({
-        ...selectedContent,
-        likes_count: isLiked ? selectedContent.likes_count - 1 : selectedContent.likes_count + 1,
-      })
+      setContents((prev) =>
+        prev.map((c) =>
+          c.id === contentId ? { ...c, likes_count: isLiked ? c.likes_count - 1 : c.likes_count + 1 } : c,
+        ),
+      )
+    } catch (error) {
+      console.error("Error liking:", error)
     }
   }
 
   const handleSave = async (contentId: string) => {
     if (!userId) {
-      alert("يجب تسجيل الدخول للحفظ")
+      router.push("/auth/login")
       return
     }
 
     const supabase = createClient()
     const isSaved = saves[contentId]
 
-    if (isSaved) {
-      await supabase.from("user_service_content_saves").delete().eq("content_id", contentId).eq("user_id", userId)
-    } else {
-      await supabase.from("user_service_content_saves").insert({ content_id: contentId, user_id: userId })
-    }
+    try {
+      if (isSaved) {
+        await supabase.from("user_service_favorites").delete().eq("content_id", contentId).eq("user_id", userId)
+      } else {
+        await supabase.from("user_service_favorites").insert({
+          content_id: contentId,
+          user_id: userId,
+        })
+      }
 
-    setSaves({ ...saves, [contentId]: !isSaved })
+      setSaves((prev) => ({ ...prev, [contentId]: !isSaved }))
+    } catch (error) {
+      console.error("Error saving:", error)
+    }
   }
 
-  const handleRequestService = () => {
+  const handleRequestService = (content: ServiceContent) => {
     if (!userId) {
-      alert("يجب تسجيل الدخول أولاً")
       router.push("/auth/login")
       return
     }
 
-    if (!service || !selectedContent) return
-
-    if (service.user_id === userId) {
-      alert("لا يمكنك مراسلة نفسك")
-      return
+    if (service) {
+      const contentInfo = encodeURIComponent(
+        JSON.stringify({
+          type: "content_quote",
+          contentId: content.id,
+          contentTitle: content.title,
+          contentType: content.content_type,
+          contentUrl: content.content_url,
+          serviceName: service.name,
+        }),
+      )
+      router.push(`/messages/${service.user_id}?quote=${contentInfo}`)
     }
-
-    const contentData = {
-      id: selectedContent.id,
-      title: selectedContent.title,
-      media_url: selectedContent.file_url,
-      content_type: selectedContent.content_type,
-      service_name: service.name,
-    }
-
-    const encodedContent = encodeURIComponent(JSON.stringify(contentData))
-    const returnPath = encodeURIComponent(pathname)
-
-    router.push(`/messages/${service.user_id}?service=${encodedContent}&return=${returnPath}`)
-  }
-
-  const loadComments = async (contentId: string) => {
-    const supabase = createClient()
-    const { data } = await supabase
-      .from("user_service_content_comments")
-      .select("*")
-      .eq("content_id", contentId)
-      .order("created_at", { ascending: false })
-
-    setComments(data || [])
-  }
-
-  const handleAddComment = async () => {
-    if (!userId || !newComment.trim() || !selectedContent) return
-
-    const supabase = createClient()
-    const username = localStorage.getItem("username") || "مستخدم"
-
-    await supabase.from("user_service_content_comments").insert({
-      content_id: selectedContent.id,
-      user_id: userId,
-      username: username,
-      content: newComment.trim(),
-    })
-
-    setNewComment("")
-    loadComments(selectedContent.id)
-
-    // تحديث العداد
-    setSelectedContent({
-      ...selectedContent,
-      comments_count: selectedContent.comments_count + 1,
-    })
   }
 
   const filters: { type: FilterType; label: string; icon: any }[] = [
     { type: "all", label: "الكل", icon: Grid3X3 },
-    { type: "video", label: "فيديوهات", icon: Video },
-    { type: "audio", label: "صوتيات", icon: Music },
+    { type: "video", label: "فيديو", icon: Video },
+    { type: "audio", label: "صوت", icon: Music },
     { type: "image", label: "صور", icon: ImageIcon },
   ]
-
-  const getContentIcon = (type: string) => {
-    switch (type) {
-      case "video":
-        return <Video className="w-5 h-5" />
-      case "audio":
-        return <Music className="w-5 h-5" />
-      case "image":
-        return <ImageIcon className="w-5 h-5" />
-      default:
-        return <FileVideo className="w-5 h-5" />
-    }
-  }
 
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-[#F5E9E8] via-[#FDF8F7] to-[#F5E9E8] flex items-center justify-center">
-        <div className="w-10 h-10 border-3 border-[#7B68EE] border-t-transparent rounded-full animate-spin" />
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-10 h-10 border-3 border-[#7B68EE] border-t-transparent rounded-full animate-spin" />
+          <p className="text-[#B38C8A]">جاري التحميل...</p>
+        </div>
       </div>
     )
   }
@@ -327,332 +277,184 @@ function ServicePageContent() {
     return (
       <div className="min-h-screen bg-gradient-to-br from-[#F5E9E8] via-[#FDF8F7] to-[#F5E9E8] flex items-center justify-center">
         <div className="text-center">
-          <p className="text-[#B38C8A] mb-4">الخدمة غير موجودة</p>
-          <Button onClick={() => router.back()}>العودة</Button>
+          <p className="text-[#B38C8A] text-lg mb-4">الخدمة غير موجودة</p>
+          <Button onClick={() => router.push("/services/other")} className="bg-[#7B68EE]">
+            العودة للخدمات
+          </Button>
         </div>
-      </div>
-    )
-  }
-
-  // عرض المحتوى المحدد (YouTube Style)
-  if (selectedContent) {
-    return (
-      <div className="min-h-screen bg-black">
-        {/* زر الإغلاق */}
-        <button
-          onClick={() => {
-            setSelectedContent(null)
-            setShowComments(false)
-          }}
-          className="absolute top-4 right-4 z-50 text-white bg-black/50 rounded-full p-2"
-        >
-          <X className="w-6 h-6" />
-        </button>
-
-        {/* مشغل المحتوى */}
-        <div className="w-full h-[50vh] bg-black flex items-center justify-center">
-          {selectedContent.content_type === "video" ? (
-            <video src={selectedContent.file_url} controls autoPlay className="w-full h-full object-contain" />
-          ) : selectedContent.content_type === "audio" ? (
-            <div className="text-center text-white p-8">
-              <div className="w-32 h-32 bg-gradient-to-br from-[#7B68EE] to-[#6A5ACD] rounded-full mx-auto mb-6 flex items-center justify-center">
-                <Music className="w-16 h-16" />
-              </div>
-              <h2 className="text-xl font-bold mb-4">{selectedContent.title}</h2>
-              <audio src={selectedContent.file_url} controls autoPlay className="w-full max-w-md" />
-            </div>
-          ) : (
-            <Image
-              src={selectedContent.file_url || "/placeholder.svg"}
-              alt={selectedContent.title}
-              fill
-              className="object-contain"
-            />
-          )}
-        </div>
-
-        {/* تفاصيل المحتوى */}
-        <div className="bg-gradient-to-br from-[#F5E9E8] via-[#FDF8F7] to-[#F5E9E8] min-h-[50vh] p-4">
-          {/* العنوان والوصف */}
-          <h1 className="text-xl font-bold text-[#B38C8A] mb-2">{selectedContent.title}</h1>
-          {selectedContent.description && <p className="text-[#B38C8A]/70 mb-4">{selectedContent.description}</p>}
-
-          {/* معلومات الخدمة */}
-          <div className="flex items-center gap-3 mb-4 pb-4 border-b border-[#B38C8A]/10">
-            <div className="w-12 h-12 rounded-full bg-[#7B68EE] flex items-center justify-center overflow-hidden">
-              {service.avatar_url ? (
-                <Image
-                  src={service.avatar_url || "/placeholder.svg"}
-                  alt="profile"
-                  width={48}
-                  height={48}
-                  className="object-cover"
-                />
-              ) : (
-                <span className="text-white font-bold">{service.name[0]}</span>
-              )}
-            </div>
-            <div className="flex-1">
-              <h3 className="font-semibold text-[#B38C8A]">{service.name}</h3>
-              <p className="text-sm text-[#B38C8A]/60">{service.followers_count} متابع</p>
-            </div>
-            {!isOwner && (
-              <Button
-                onClick={handleFollow}
-                variant={isFollowing ? "outline" : "default"}
-                className={isFollowing ? "border-[#7B68EE] text-[#7B68EE]" : "bg-[#7B68EE]"}
-              >
-                {isFollowing ? "متابَع" : "متابعة"}
-              </Button>
-            )}
-          </div>
-
-          {/* أزرار التفاعل */}
-          <div className="flex items-center justify-around mb-4">
-            <button onClick={() => handleLike(selectedContent.id)} className="flex flex-col items-center gap-1">
-              <div
-                className={`w-12 h-12 rounded-full flex items-center justify-center ${likes[selectedContent.id] ? "bg-red-500 text-white" : "bg-[#B38C8A]/10 text-[#B38C8A]"}`}
-              >
-                <Heart className="w-5 h-5" fill={likes[selectedContent.id] ? "white" : "none"} />
-              </div>
-              <span className="text-xs text-[#B38C8A]">{selectedContent.likes_count}</span>
-            </button>
-
-            <button
-              onClick={() => {
-                loadComments(selectedContent.id)
-                setShowComments(true)
-              }}
-              className="flex flex-col items-center gap-1"
-            >
-              <div className="w-12 h-12 rounded-full bg-[#B38C8A]/10 flex items-center justify-center text-[#B38C8A]">
-                <MessageCircle className="w-5 h-5" />
-              </div>
-              <span className="text-xs text-[#B38C8A]">{selectedContent.comments_count}</span>
-            </button>
-
-            <button onClick={() => handleSave(selectedContent.id)} className="flex flex-col items-center gap-1">
-              <div
-                className={`w-12 h-12 rounded-full flex items-center justify-center ${saves[selectedContent.id] ? "bg-[#D4AF37] text-white" : "bg-[#B38C8A]/10 text-[#B38C8A]"}`}
-              >
-                <Bookmark className="w-5 h-5" fill={saves[selectedContent.id] ? "white" : "none"} />
-              </div>
-              <span className="text-xs text-[#B38C8A]">حفظ</span>
-            </button>
-          </div>
-
-          {/* زر طلب الخدمة */}
-          {!isOwner && (
-            <Button
-              onClick={handleRequestService}
-              className="w-full bg-gradient-to-r from-[#D4AF37] to-[#C49F27] text-white py-6 rounded-xl text-lg font-bold gap-2"
-            >
-              <Send className="w-5 h-5" />
-              طلب الخدمة
-            </Button>
-          )}
-        </div>
-
-        {/* نافذة التعليقات */}
-        {showComments && (
-          <div className="fixed bottom-0 left-0 right-0 h-[60vh] bg-white z-50 rounded-t-3xl shadow-2xl flex flex-col">
-            <div className="flex items-center justify-between p-4 border-b">
-              <h3 className="font-bold text-[#B38C8A]">التعليقات</h3>
-              <button onClick={() => setShowComments(false)}>
-                <X className="w-6 h-6 text-[#B38C8A]" />
-              </button>
-            </div>
-
-            <div className="flex-1 overflow-y-auto p-4">
-              {comments.length === 0 ? (
-                <p className="text-center text-[#B38C8A]/50 py-8">لا توجد تعليقات</p>
-              ) : (
-                <div className="space-y-4">
-                  {comments.map((comment) => (
-                    <div key={comment.id} className="flex gap-3">
-                      <div className="w-8 h-8 rounded-full bg-[#B38C8A] flex items-center justify-center text-white text-sm">
-                        {comment.username?.[0] || "؟"}
-                      </div>
-                      <div>
-                        <p className="font-semibold text-sm text-[#B38C8A]">{comment.username}</p>
-                        <p className="text-[#B38C8A]/80 text-sm">{comment.content}</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {userId && (
-              <div className="p-4 border-t flex gap-2">
-                <input
-                  type="text"
-                  value={newComment}
-                  onChange={(e) => setNewComment(e.target.value)}
-                  placeholder="اكتب تعليق..."
-                  className="flex-1 bg-[#F5E9E8] rounded-lg px-4 py-2 text-[#B38C8A]"
-                />
-                <Button onClick={handleAddComment} className="bg-[#7B68EE]">
-                  إرسال
-                </Button>
-              </div>
-            )}
-          </div>
-        )}
       </div>
     )
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#F5E9E8] via-[#FDF8F7] to-[#F5E9E8] pb-24">
+    <div className="min-h-screen bg-gradient-to-br from-[#F5E9E8] via-[#FDF8F7] to-[#F5E9E8]">
       <TopHeader />
 
-      <main className="pt-16">
-        {/* صورة الغلاف */}
-        <div className="relative h-40 bg-gradient-to-br from-[#7B68EE] to-[#6A5ACD]">
+      <main className="pt-16 pb-24">
+        <div className="relative h-40 bg-gradient-to-r from-[#7B68EE] to-[#6A5ACD]">
           {service.cover_url && (
-            <Image src={service.cover_url || "/placeholder.svg"} alt="cover" fill className="object-cover" />
+            <img src={service.cover_url || "/placeholder.svg"} alt="cover" className="w-full h-full object-cover" />
           )}
           <button
             onClick={() => router.back()}
-            className="absolute top-4 right-4 bg-black/30 text-white rounded-full p-2"
+            className="absolute top-4 right-4 bg-black/30 backdrop-blur-sm text-white rounded-full p-2"
           >
             <ChevronLeft className="w-5 h-5" />
           </button>
+
           {isOwner && (
-            <Link
-              href={`/services/other/${serviceId}/manage`}
-              className="absolute top-4 left-4 bg-black/30 text-white rounded-full p-2"
-            >
-              <Settings className="w-5 h-5" />
-            </Link>
+            <div className="absolute top-4 left-4 flex gap-2">
+              <button
+                onClick={() => router.push(`/services/other/${serviceId}/upload`)}
+                className="bg-black/30 backdrop-blur-sm text-white rounded-full p-2"
+              >
+                <Upload className="w-5 h-5" />
+              </button>
+              <button
+                onClick={() => router.push(`/services/other/${serviceId}/manage`)}
+                className="bg-black/30 backdrop-blur-sm text-white rounded-full p-2"
+              >
+                <Settings className="w-5 h-5" />
+              </button>
+            </div>
           )}
         </div>
 
-        {/* معلومات الخدمة */}
-        <div className="px-4 pb-4 -mt-12 relative">
-          <div className="flex items-end gap-4 mb-4">
-            <div className="w-24 h-24 rounded-full border-4 border-white bg-[#B38C8A] flex items-center justify-center overflow-hidden">
-              {service.avatar_url ? (
-                <Image
-                  src={service.avatar_url || "/placeholder.svg"}
-                  alt="profile"
-                  width={96}
-                  height={96}
-                  className="object-cover"
-                />
-              ) : (
-                <span className="text-white text-3xl font-bold">{service.name[0]}</span>
-              )}
-            </div>
-            <div className="flex-1 pb-2">
-              <h1 className="text-xl font-bold text-[#B38C8A]">{service.name}</h1>
-              <div className="flex items-center gap-4 text-sm text-[#B38C8A]/60">
-                <span>{service.followers_count} متابع</span>
-                <span>{service.content_count} محتوى</span>
+        <div className="px-4 -mt-12 relative z-10">
+          <div className="bg-white rounded-2xl p-4 shadow-lg">
+            <div className="flex items-start gap-4">
+              <div className="w-20 h-20 rounded-xl bg-gradient-to-br from-[#7B68EE] to-[#6A5ACD] flex items-center justify-center text-white text-2xl font-bold overflow-hidden flex-shrink-0">
+                {service.avatar_url ? (
+                  <img
+                    src={service.avatar_url || "/placeholder.svg"}
+                    alt={service.name}
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  service.name?.charAt(0)
+                )}
+              </div>
+
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <h1 className="text-xl font-bold text-[#2D2D2D] truncate">{service.name}</h1>
+                  {isVerifiedUser(service.user_id) && <VerifiedBadge size={20} />}
+                </div>
+                <p className="text-[#B38C8A] text-sm mt-1 line-clamp-2">{service.description}</p>
+
+                <div className="flex items-center gap-4 mt-3 text-sm">
+                  <div className="flex items-center gap-1 text-[#7B68EE]">
+                    <Users className="w-4 h-4" />
+                    <span>{service.followers_count || 0} متابع</span>
+                  </div>
+                  <div className="flex items-center gap-1 text-[#B38C8A]">
+                    <Grid3X3 className="w-4 h-4" />
+                    <span>{contents.length} محتوى</span>
+                  </div>
+                </div>
               </div>
             </div>
-          </div>
 
-          {service.description && <p className="text-[#B38C8A]/70 mb-4">{service.description}</p>}
-
-          {/* أزرار الإجراءات */}
-          <div className="flex gap-3">
-            {isOwner ? (
-              <Link href={`/services/other/${serviceId}/upload`} className="flex-1">
-                <Button className="w-full bg-gradient-to-r from-[#7B68EE] to-[#6A5ACD] text-white gap-2">
-                  <Plus className="w-4 h-4" />
-                  إضافة محتوى
+            {!isOwner && (
+              <div className="flex gap-3 mt-4">
+                <Button
+                  onClick={handleFollow}
+                  className={`flex-1 ${
+                    isFollowing
+                      ? "bg-gray-200 text-gray-700 hover:bg-gray-300"
+                      : "bg-[#7B68EE] hover:bg-[#6A5ACD] text-white"
+                  }`}
+                >
+                  {isFollowing ? "إلغاء المتابعة" : "متابعة"}
                 </Button>
-              </Link>
-            ) : (
-              <Button
-                onClick={handleFollow}
-                className={`flex-1 ${isFollowing ? "bg-white border border-[#7B68EE] text-[#7B68EE]" : "bg-[#7B68EE] text-white"}`}
-              >
-                {isFollowing ? "متابَع" : "متابعة"}
-              </Button>
+                <Button
+                  onClick={() => router.push(`/messages/${service.user_id}`)}
+                  variant="outline"
+                  className="flex-1 border-[#7B68EE] text-[#7B68EE]"
+                >
+                  <MessageCircle className="w-4 h-4 ml-2" />
+                  تواصل
+                </Button>
+              </div>
             )}
           </div>
         </div>
 
-        {/* فلاتر المحتوى */}
-        <div className="px-4 border-b border-[#B38C8A]/10">
-          <div className="flex gap-2 overflow-x-auto py-3">
+        <div className="px-4 mt-6">
+          <div className="flex gap-2 overflow-x-auto pb-2">
             {filters.map((filter) => (
               <button
                 key={filter.type}
                 onClick={() => setActiveFilter(filter.type)}
-                className={`flex items-center gap-2 px-4 py-2 rounded-full whitespace-nowrap transition-colors ${
+                className={`flex items-center gap-2 px-4 py-2 rounded-full whitespace-nowrap transition-all ${
                   activeFilter === filter.type
                     ? "bg-[#7B68EE] text-white"
                     : "bg-white text-[#B38C8A] border border-[#B38C8A]/20"
                 }`}
               >
                 <filter.icon className="w-4 h-4" />
-                {filter.label}
+                <span className="text-sm font-medium">{filter.label}</span>
               </button>
             ))}
           </div>
         </div>
 
-        {/* شبكة المحتوى */}
-        <div className="px-4 py-4">
+        <div className="px-4 mt-4">
           {filteredContents.length === 0 ? (
             <div className="text-center py-12">
-              <div className="w-16 h-16 bg-[#7B68EE]/10 rounded-full mx-auto mb-4 flex items-center justify-center">
-                <FileVideo className="w-8 h-8 text-[#7B68EE]/50" />
+              <div className="w-16 h-16 bg-[#7B68EE]/10 rounded-full flex items-center justify-center mx-auto mb-4">
+                <Grid3X3 className="w-8 h-8 text-[#7B68EE]/50" />
               </div>
-              <p className="text-[#B38C8A]/60">لا يوجد محتوى</p>
+              <p className="text-[#B38C8A]">لا يوجد محتوى حتى الآن</p>
               {isOwner && (
-                <Link href={`/services/other/${serviceId}/upload`}>
-                  <Button className="mt-4 bg-[#7B68EE]">إضافة أول محتوى</Button>
-                </Link>
+                <Button
+                  onClick={() => router.push(`/services/other/${serviceId}/upload`)}
+                  className="mt-4 bg-[#7B68EE]"
+                >
+                  <Upload className="w-4 h-4 ml-2" />
+                  أضف محتوى
+                </Button>
               )}
             </div>
           ) : (
             <div className="grid grid-cols-2 gap-3">
               {filteredContents.map((content) => (
-                <button
+                <div
                   key={content.id}
-                  onClick={() => setSelectedContent(content)}
-                  className="relative aspect-square bg-[#B38C8A]/10 rounded-xl overflow-hidden group"
+                  onClick={() => router.push(`/services/other/${serviceId}/content/${content.id}`)}
+                  className="relative aspect-square rounded-xl overflow-hidden bg-white shadow-sm cursor-pointer group"
                 >
-                  {content.content_type === "image" ? (
-                    <Image
-                      src={content.file_url || "/placeholder.svg"}
+                  {content.content_type === "image" && (
+                    <img
+                      src={content.content_url || "/placeholder.svg"}
                       alt={content.title}
-                      fill
-                      className="object-cover"
+                      className="w-full h-full object-cover"
                     />
-                  ) : content.thumbnail_url ? (
-                    <Image
-                      src={content.thumbnail_url || "/placeholder.svg"}
-                      alt={content.title}
-                      fill
-                      className="object-cover"
-                    />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-[#7B68EE] to-[#6A5ACD]">
-                      {getContentIcon(content.content_type)}
+                  )}
+                  {content.content_type === "video" && (
+                    <div className="relative w-full h-full bg-black">
+                      <video src={content.content_url} className="w-full h-full object-cover" />
+                      <div className="absolute inset-0 flex items-center justify-center bg-black/30">
+                        <Play className="w-10 h-10 text-white" />
+                      </div>
+                    </div>
+                  )}
+                  {content.content_type === "audio" && (
+                    <div className="w-full h-full bg-gradient-to-br from-[#7B68EE] to-[#6A5ACD] flex items-center justify-center">
+                      <Music className="w-12 h-12 text-white/80" />
                     </div>
                   )}
 
-                  {/* أيقونة نوع المحتوى */}
-                  <div className="absolute top-2 right-2 bg-black/50 text-white rounded-full p-1.5">
-                    {getContentIcon(content.content_type)}
+                  <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent p-3">
+                    <p className="text-white text-sm font-medium truncate">{content.title}</p>
+                    <div className="flex items-center gap-2 mt-1 text-white/80 text-xs">
+                      <span className="flex items-center gap-1">
+                        <Heart className="w-3 h-3" />
+                        {content.likes_count || 0}
+                      </span>
+                    </div>
                   </div>
-
-                  {/* Overlay على Hover */}
-                  <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                    <Play className="w-12 h-12 text-white" />
-                  </div>
-
-                  {/* العنوان */}
-                  <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-2">
-                    <p className="text-white text-sm font-medium line-clamp-1">{content.title}</p>
-                  </div>
-                </button>
+                </div>
               ))}
             </div>
           )}
@@ -661,19 +463,5 @@ function ServicePageContent() {
 
       <BottomNav />
     </div>
-  )
-}
-
-export default function ServicePage() {
-  return (
-    <Suspense
-      fallback={
-        <div className="min-h-screen bg-gradient-to-br from-[#F5E9E8] via-[#FDF8F7] to-[#F5E9E8] flex items-center justify-center">
-          <div className="w-10 h-10 border-3 border-[#7B68EE] border-t-transparent rounded-full animate-spin" />
-        </div>
-      }
-    >
-      <ServicePageContent />
-    </Suspense>
   )
 }

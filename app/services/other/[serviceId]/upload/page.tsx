@@ -8,8 +8,7 @@ import { createClient } from "@/lib/supabase/client"
 import { TopHeader } from "@/components/top-header"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Textarea } from "@/components/ui/textarea"
-import { ChevronLeft, Upload, Video, Music, ImageIcon, X } from "lucide-react"
+import { ChevronLeft, Upload, Video, Music, ImageIcon, X, CheckCircle } from "lucide-react"
 
 type ContentType = "video" | "audio" | "image"
 
@@ -21,12 +20,13 @@ export default function UploadContentPage() {
   const [userId, setUserId] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [contentType, setContentType] = useState<ContentType>("video")
-  const [formData, setFormData] = useState({
-    title: "",
-    description: "",
-  })
+  const [title, setTitle] = useState("")
   const [file, setFile] = useState<File | null>(null)
   const [filePreview, setFilePreview] = useState<string | null>(null)
+
+  const [uploadProgress, setUploadProgress] = useState(0)
+  const [uploadStatus, setUploadStatus] = useState<"idle" | "uploading" | "success" | "error">("idle")
+  const [errorMessage, setErrorMessage] = useState("")
 
   useEffect(() => {
     const storedUserId = localStorage.getItem("user_id")
@@ -51,11 +51,10 @@ export default function UploadContentPage() {
     const selectedFile = e.target.files?.[0]
     if (selectedFile) {
       setFile(selectedFile)
+      setUploadStatus("idle")
+      setErrorMessage("")
 
-      // معاينة الملف
-      if (contentType === "image") {
-        setFilePreview(URL.createObjectURL(selectedFile))
-      } else if (contentType === "video") {
+      if (contentType === "image" || contentType === "video") {
         setFilePreview(URL.createObjectURL(selectedFile))
       } else {
         setFilePreview(null)
@@ -77,45 +76,64 @@ export default function UploadContentPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
-    if (!userId || !file || !formData.title.trim()) {
+    if (!userId || !file || !title.trim()) {
       alert("يرجى ملء جميع الحقول المطلوبة")
       return
     }
 
     setLoading(true)
+    setUploadStatus("uploading")
+    setUploadProgress(0)
+    setErrorMessage("")
 
     try {
       const supabase = createClient()
+
+      setUploadProgress(10)
 
       // رفع الملف
       const fileExt = file.name.split(".").pop()
       const fileName = `${userId}_${Date.now()}.${fileExt}`
       const filePath = `content/${contentType}s/${fileName}`
 
+      setUploadProgress(30)
+
       const { error: uploadError } = await supabase.storage.from("user-services").upload(filePath, file)
 
-      if (uploadError) throw uploadError
+      if (uploadError) {
+        throw new Error("فشل رفع الملف: " + uploadError.message)
+      }
+
+      setUploadProgress(60)
 
       const {
         data: { publicUrl },
       } = supabase.storage.from("user-services").getPublicUrl(filePath)
 
-      // إنشاء المحتوى
+      setUploadProgress(80)
+
       const { error: insertError } = await supabase.from("user_service_content").insert({
-        user_service_id: serviceId,
-        user_id: userId,
-        title: formData.title.trim(),
-        description: formData.description.trim(),
+        service_id: serviceId,
+        title: title.trim(),
         content_type: contentType,
-        file_url: publicUrl,
+        content_url: publicUrl,
       })
 
-      if (insertError) throw insertError
+      if (insertError) {
+        throw new Error("فشل حفظ المحتوى: " + insertError.message)
+      }
 
-      router.replace(`/services/other/${serviceId}`)
-    } catch (error) {
+      setUploadProgress(100)
+      setUploadStatus("success")
+
+      setTimeout(() => {
+        router.replace(`/services/other/${serviceId}`)
+      }, 1500)
+    } catch (error: any) {
       console.error("Error uploading content:", error)
-      alert("حدث خطأ أثناء رفع المحتوى")
+      setUploadStatus("error")
+      setErrorMessage(error.message || "حدث خطأ غير متوقع")
+      setUploadProgress(0)
     } finally {
       setLoading(false)
     }
@@ -130,6 +148,43 @@ export default function UploadContentPage() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#F5E9E8] via-[#FDF8F7] to-[#F5E9E8]">
       <TopHeader />
+
+      {uploadStatus === "uploading" && (
+        <div className="fixed top-16 left-0 right-0 z-50 px-4 py-2 bg-white/90 backdrop-blur-sm shadow-sm">
+          <div className="max-w-screen-md mx-auto">
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-sm text-[#7B68EE] font-medium">جاري رفع المحتوى...</span>
+              <span className="text-sm text-[#7B68EE] font-bold">{uploadProgress}%</span>
+            </div>
+            <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
+              <div
+                className="bg-gradient-to-r from-[#7B68EE] to-[#6A5ACD] h-full rounded-full transition-all duration-300"
+                style={{ width: `${uploadProgress}%` }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {uploadStatus === "success" && (
+        <div className="fixed top-16 left-0 right-0 z-50 px-4 py-3 bg-green-500 text-white">
+          <div className="max-w-screen-md mx-auto flex items-center justify-center gap-2">
+            <CheckCircle className="w-5 h-5" />
+            <span className="font-medium">تم نشر المحتوى بنجاح! جاري العودة للصفحة...</span>
+          </div>
+        </div>
+      )}
+
+      {uploadStatus === "error" && (
+        <div className="fixed top-16 left-0 right-0 z-50 px-4 py-3 bg-red-500 text-white">
+          <div className="max-w-screen-md mx-auto flex items-center justify-between">
+            <span className="font-medium">{errorMessage}</span>
+            <button onClick={() => setUploadStatus("idle")} className="text-white/80 hover:text-white">
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+        </div>
+      )}
 
       <main className="pt-20 px-4 pb-8 max-w-screen-md mx-auto">
         {/* العنوان */}
@@ -222,29 +277,18 @@ export default function UploadContentPage() {
               العنوان <span className="text-red-500">*</span>
             </label>
             <Input
-              value={formData.title}
-              onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
               placeholder="أدخل عنوان المحتوى"
               className="bg-white border-[#B38C8A]/20"
               required
             />
           </div>
 
-          {/* الوصف */}
-          <div>
-            <label className="block text-sm font-medium text-[#B38C8A] mb-2">الوصف</label>
-            <Textarea
-              value={formData.description}
-              onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-              placeholder="أضف وصفاً للمحتوى (اختياري)"
-              className="bg-white border-[#B38C8A]/20 min-h-[100px]"
-            />
-          </div>
-
           {/* زر النشر */}
           <Button
             type="submit"
-            disabled={loading || !file || !formData.title.trim()}
+            disabled={loading || !file || !title.trim()}
             className="w-full bg-gradient-to-r from-[#7B68EE] to-[#6A5ACD] hover:from-[#6A5ACD] hover:to-[#5B4BC7] text-white py-6 rounded-xl text-lg font-bold"
           >
             {loading ? (
