@@ -1,5 +1,7 @@
 "use client"
 
+import type React from "react"
+
 import { useState, useEffect, useRef } from "react"
 import { useParams, useRouter } from "next/navigation"
 import { createClient } from "@/lib/supabase/client"
@@ -18,6 +20,8 @@ import {
   ShoppingBag,
   Send,
   User,
+  SkipBack,
+  SkipForward,
 } from "lucide-react"
 import { VerifiedBadge, isVerifiedUser } from "@/components/verified-badge"
 
@@ -70,6 +74,10 @@ export default function ContentViewPage() {
   const [isMuted, setIsMuted] = useState(false)
   const videoRef = useRef<HTMLVideoElement>(null)
   const audioRef = useRef<HTMLAudioElement>(null)
+
+  // حالات مشغل الصوت المتقدم
+  const [currentTime, setCurrentTime] = useState(0)
+  const [duration, setDuration] = useState(0)
 
   // التعليقات
   const [comments, setComments] = useState<Comment[]>([])
@@ -346,6 +354,36 @@ export default function ContentViewPage() {
     setIsMuted(!isMuted)
   }
 
+  const formatTime = (time: number) => {
+    const minutes = Math.floor(time / 60)
+    const seconds = Math.floor(time % 60)
+    return `${minutes}:${seconds.toString().padStart(2, "0")}`
+  }
+
+  const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newTime = Number.parseFloat(e.target.value)
+    if (audioRef.current) {
+      audioRef.current.currentTime = newTime
+      setCurrentTime(newTime)
+    }
+    if (videoRef.current) {
+      videoRef.current.currentTime = newTime
+      setCurrentTime(newTime)
+    }
+  }
+
+  const skipForward = () => {
+    if (audioRef.current) {
+      audioRef.current.currentTime = Math.min(audioRef.current.currentTime + 10, duration)
+    }
+  }
+
+  const skipBackward = () => {
+    if (audioRef.current) {
+      audioRef.current.currentTime = Math.max(audioRef.current.currentTime - 10, 0)
+    }
+  }
+
   const formatDate = (dateString: string) => {
     const date = new Date(dateString)
     const now = new Date()
@@ -398,7 +436,7 @@ export default function ContentViewPage() {
         </div>
       </div>
 
-      {/* Media Section - أعلى الصفحة */}
+      {/* Media Section */}
       <div className="relative w-full bg-[#2D2D2D] flex items-center justify-center">
         {content.content_type === "image" && (
           <div className="w-full max-h-[50vh] flex items-center justify-center">
@@ -420,8 +458,9 @@ export default function ContentViewPage() {
               onClick={togglePlay}
               onPlay={() => setIsPlaying(true)}
               onPause={() => setIsPlaying(false)}
+              onTimeUpdate={(e) => setCurrentTime(e.currentTarget.currentTime)}
+              onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)}
             />
-            {/* أزرار التحكم بالفيديو */}
             <div className="absolute bottom-4 left-4 right-4 flex items-center justify-between">
               <button onClick={togglePlay} className="bg-black/50 backdrop-blur-sm rounded-full p-3">
                 {isPlaying ? <Pause className="w-6 h-6 text-white" /> : <Play className="w-6 h-6 text-white" />}
@@ -434,39 +473,81 @@ export default function ContentViewPage() {
         )}
 
         {content.content_type === "audio" && (
-          <div className="w-full py-12 flex flex-col items-center justify-center bg-gradient-to-br from-[#7B68EE] to-[#6A5ACD]">
+          <div className="w-full py-8 flex flex-col items-center justify-center bg-gradient-to-br from-[#7B68EE] to-[#6A5ACD]">
             <div
-              className={`w-32 h-32 rounded-full bg-white/20 flex items-center justify-center mb-6 ${
+              className={`w-28 h-28 rounded-full bg-white/20 flex items-center justify-center mb-4 ${
                 isPlaying ? "animate-pulse" : ""
               }`}
             >
-              <Music className="w-16 h-16 text-white" />
+              <Music className="w-14 h-14 text-white" />
             </div>
+
             <audio
               ref={audioRef}
               src={content.content_url}
               onPlay={() => setIsPlaying(true)}
               onPause={() => setIsPlaying(false)}
+              onTimeUpdate={(e) => setCurrentTime(e.currentTarget.currentTime)}
+              onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)}
             />
-            <div className="flex items-center gap-4">
-              <button onClick={togglePlay} className="bg-white rounded-full p-4">
+
+            {/* شريط التقدم */}
+            <div className="w-full max-w-sm px-6 mb-4">
+              <input
+                type="range"
+                min="0"
+                max={duration || 0}
+                value={currentTime}
+                onChange={handleSeek}
+                className="w-full h-2 bg-white/30 rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:shadow-lg"
+                style={{
+                  background: `linear-gradient(to right, white ${(currentTime / duration) * 100}%, rgba(255,255,255,0.3) ${(currentTime / duration) * 100}%)`,
+                }}
+              />
+              <div className="flex justify-between text-white/80 text-sm mt-1">
+                <span>{formatTime(currentTime)}</span>
+                <span>{formatTime(duration)}</span>
+              </div>
+            </div>
+
+            {/* أزرار التحكم */}
+            <div className="flex items-center gap-6">
+              <button
+                onClick={skipBackward}
+                className="bg-white/20 rounded-full p-3 active:scale-95 transition-transform"
+              >
+                <SkipBack className="w-6 h-6 text-white" />
+              </button>
+              <button
+                onClick={togglePlay}
+                className="bg-white rounded-full p-4 shadow-lg active:scale-95 transition-transform"
+              >
                 {isPlaying ? <Pause className="w-8 h-8 text-[#7B68EE]" /> : <Play className="w-8 h-8 text-[#7B68EE]" />}
               </button>
-              <button onClick={toggleMute} className="bg-white/20 rounded-full p-3">
-                {isMuted ? <VolumeX className="w-5 h-5 text-white" /> : <Volume2 className="w-5 h-5 text-white" />}
+              <button
+                onClick={skipForward}
+                className="bg-white/20 rounded-full p-3 active:scale-95 transition-transform"
+              >
+                <SkipForward className="w-6 h-6 text-white" />
               </button>
             </div>
+
+            {/* زر كتم الصوت */}
+            <button onClick={toggleMute} className="mt-4 bg-white/20 rounded-full p-2">
+              {isMuted ? <VolumeX className="w-5 h-5 text-white" /> : <Volume2 className="w-5 h-5 text-white" />}
+            </button>
           </div>
         )}
       </div>
 
-      {/* Content Details - أسفل المحتوى */}
+      {/* Content Details */}
       <div className="flex-1">
         <div className="p-4">
           {/* عنوان المحتوى */}
           <h2 className="text-[#2D2D2D] text-xl font-bold mb-1">{content.title}</h2>
           <p className="text-[#B38C8A] text-sm mb-4">{formatDate(content.created_at)}</p>
 
+          {/* زر اطلب الآن */}
           {service.user_id !== userId && (
             <Button
               onClick={handleRequestService}
@@ -477,34 +558,33 @@ export default function ContentViewPage() {
             </Button>
           )}
 
-          {/* أزرار التفاعل الرئيسية */}
-          <div className="flex items-center justify-between mb-4 py-3 border-y border-[#E8D8D8]">
+          <div className="flex items-center justify-center gap-8 mb-4 py-3 border-y border-[#E8D8D8]">
             <button onClick={handleLike} className="flex flex-col items-center gap-1">
-              <div className={`p-2 rounded-full ${isLiked ? "bg-red-100" : "bg-[#F5E9E8]"}`}>
-                <Heart className={`w-6 h-6 ${isLiked ? "fill-red-500 text-red-500" : "text-[#B38C8A]"}`} />
+              <div className={`p-2.5 rounded-full ${isLiked ? "bg-red-100" : "bg-[#F5E9E8]"}`}>
+                <Heart className={`w-5 h-5 ${isLiked ? "fill-red-500 text-red-500" : "text-[#B38C8A]"}`} />
               </div>
-              <span className="text-[#2D2D2D] text-sm">{likesCount}</span>
+              <span className="text-[#2D2D2D] text-xs">{likesCount}</span>
             </button>
 
             <button onClick={() => setShowComments(!showComments)} className="flex flex-col items-center gap-1">
-              <div className="p-2 rounded-full bg-[#F5E9E8]">
-                <MessageCircle className="w-6 h-6 text-[#B38C8A]" />
+              <div className="p-2.5 rounded-full bg-[#F5E9E8]">
+                <MessageCircle className="w-5 h-5 text-[#B38C8A]" />
               </div>
-              <span className="text-[#2D2D2D] text-sm">{comments.length}</span>
+              <span className="text-[#2D2D2D] text-xs">{comments.length}</span>
             </button>
 
             <button onClick={handleShare} className="flex flex-col items-center gap-1">
-              <div className="p-2 rounded-full bg-[#F5E9E8]">
-                <Share2 className="w-6 h-6 text-[#B38C8A]" />
+              <div className="p-2.5 rounded-full bg-[#F5E9E8]">
+                <Share2 className="w-5 h-5 text-[#B38C8A]" />
               </div>
-              <span className="text-[#2D2D2D] text-sm">مشاركة</span>
+              <span className="text-[#2D2D2D] text-xs">مشاركة</span>
             </button>
 
             <button onClick={handleSave} className="flex flex-col items-center gap-1">
-              <div className={`p-2 rounded-full ${isSaved ? "bg-[#7B68EE]/20" : "bg-[#F5E9E8]"}`}>
-                <Bookmark className={`w-6 h-6 ${isSaved ? "fill-[#7B68EE] text-[#7B68EE]" : "text-[#B38C8A]"}`} />
+              <div className={`p-2.5 rounded-full ${isSaved ? "bg-[#7B68EE]/20" : "bg-[#F5E9E8]"}`}>
+                <Bookmark className={`w-5 h-5 ${isSaved ? "fill-[#7B68EE] text-[#7B68EE]" : "text-[#B38C8A]"}`} />
               </div>
-              <span className="text-[#2D2D2D] text-sm">حفظ</span>
+              <span className="text-[#2D2D2D] text-xs">حفظ</span>
             </button>
           </div>
 
@@ -512,7 +592,7 @@ export default function ContentViewPage() {
             <div className="flex items-center gap-3">
               <div
                 onClick={() => router.push(`/services/other/${serviceId}`)}
-                className="w-12 h-12 rounded-full bg-gradient-to-br from-[#7B68EE] to-[#6A5ACD] flex items-center justify-center text-white overflow-hidden cursor-pointer flex-shrink-0"
+                className="w-11 h-11 rounded-full bg-gradient-to-br from-[#7B68EE] to-[#6A5ACD] flex items-center justify-center text-white overflow-hidden cursor-pointer flex-shrink-0"
               >
                 {service.avatar_url ? (
                   <img
@@ -521,37 +601,35 @@ export default function ContentViewPage() {
                     className="w-full h-full object-cover"
                   />
                 ) : (
-                  service.name?.charAt(0)
+                  <span className="text-lg font-bold">{service.name?.charAt(0)}</span>
                 )}
               </div>
               <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1.5">
                   <h3
                     onClick={() => router.push(`/services/other/${serviceId}`)}
-                    className="text-[#2D2D2D] font-bold cursor-pointer hover:underline truncate"
+                    className="text-[#2D2D2D] font-bold cursor-pointer hover:underline truncate text-sm"
                   >
                     {service.name}
                   </h3>
-                  {isVerifiedUser(service.user_id) && <VerifiedBadge size={16} />}
+                  {isVerifiedUser(service.user_id) && <VerifiedBadge size={14} />}
                 </div>
-                <p className="text-[#B38C8A] text-sm">{service.followers_count || 0} متابع</p>
+                <p className="text-[#B38C8A] text-xs">{service.followers_count || 0} متابع</p>
               </div>
-              {service.user_id !== userId && (
-                <Button
-                  onClick={handleFollow}
-                  size="sm"
-                  className={
-                    isFollowing
-                      ? "bg-gray-200 text-gray-700 hover:bg-gray-300"
-                      : "bg-[#7B68EE] hover:bg-[#6A5ACD] text-white"
-                  }
-                >
-                  {isFollowing ? "متابَع" : "متابعة"}
-                </Button>
-              )}
+              {/* زر المتابعة بجانب اسم الخدمة */}
+              <Button
+                onClick={handleFollow}
+                size="sm"
+                className={`flex-shrink-0 px-4 py-1.5 text-xs rounded-full ${
+                  isFollowing
+                    ? "bg-gray-100 text-gray-700 hover:bg-gray-200 border border-gray-300"
+                    : "bg-[#D4AF37] hover:bg-[#C9A227] text-white"
+                }`}
+              >
+                {isFollowing ? "متابَع" : "متابعة"}
+              </Button>
             </div>
 
-            {/* وصف الخدمة */}
             {service.description && <p className="text-[#666] text-sm mt-3 leading-relaxed">{service.description}</p>}
           </div>
 
@@ -570,7 +648,7 @@ export default function ContentViewPage() {
                 {/* إضافة تعليق */}
                 {userId && (
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-full bg-[#7B68EE] flex items-center justify-center flex-shrink-0">
+                    <div className="w-10 h-10 rounded-full bg-[#7B68EE]/20 flex items-center justify-center flex-shrink-0">
                       <User className="w-5 h-5 text-white" />
                     </div>
                     <div className="flex-1 flex items-center gap-2 bg-[#F5E9E8] rounded-full px-4 py-2">
