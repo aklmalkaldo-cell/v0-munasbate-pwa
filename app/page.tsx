@@ -5,6 +5,7 @@ import { Header } from '@/components/Header'
 import { AudioUpload } from '@/components/AudioUpload'
 import { TextInputs } from '@/components/TextInputs'
 import { ReviewLyrics } from '@/components/ReviewLyrics'
+import { LyricsEditor } from '@/components/LyricsEditor'
 import { ProcessingStatus } from '@/components/ProcessingStatus'
 import { AudioPlayer } from '@/components/AudioPlayer'
 import { LanguageProvider } from '@/components/LanguageProvider'
@@ -45,8 +46,11 @@ function DashboardContent() {
   const [oldName, setOldName] = useState('')
   const [newName, setNewName] = useState('')
   const [isReviewing, setIsReviewing] = useState(false)
+  const [isEditingLyrics, setIsEditingLyrics] = useState(false)
   const [isProcessing, setIsProcessing] = useState(false)
   const [processingStep, setProcessingStep] = useState(0)
+  const [originalLyrics, setOriginalLyrics] = useState<string | null>(null)
+  const [transcriptionError, setTranscriptionError] = useState<string | null>(null)
   const [resultUrl, setResultUrl] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [jobId, setJobId] = useState<string | null>(null)
@@ -59,7 +63,7 @@ function DashboardContent() {
 
   // Poll for job status
   useEffect(() => {
-    if (!jobId || !isProcessing) return
+    if (!jobId) return
 
     const pollInterval = setInterval(async () => {
       try {
@@ -68,7 +72,13 @@ function DashboardContent() {
 
         console.log('[v0] Job status:', data)
 
-        if (data.status === 'completed') {
+        // Handle transcription completion
+        if (data.status === 'waiting_for_edit' && data.originalLyrics && !isEditingLyrics) {
+          setOriginalLyrics(data.originalLyrics)
+          setIsEditingLyrics(true)
+          setProcessingStep(2)
+          clearInterval(pollInterval)
+        } else if (data.status === 'completed') {
           setIsProcessing(false)
           setProcessingStep(4)
           setResultUrl(data.resultUrl)
@@ -76,9 +86,12 @@ function DashboardContent() {
         } else if (data.status === 'failed') {
           setIsProcessing(false)
           setError(data.errorMessage || 'Processing failed')
+          setTranscriptionError(data.errorMessage)
           clearInterval(pollInterval)
-        } else if (data.status === 'processing') {
-          setProcessingStep(data.currentStep)
+        } else if (data.status === 'generating') {
+          setProcessingStep(3)
+        } else if (data.status === 'transcribing') {
+          setProcessingStep(2)
         }
       } catch (err) {
         console.error('[v0] Polling error:', err)
@@ -86,7 +99,7 @@ function DashboardContent() {
     }, 500)
 
     return () => clearInterval(pollInterval)
-  }, [jobId, isProcessing])
+  }, [jobId, isEditingLyrics])
 
   if (!mounted) return null
 
@@ -159,13 +172,60 @@ function DashboardContent() {
     setIsReviewing(false)
   }
 
+  const handleBackFromLyrics = () => {
+    setIsEditingLyrics(false)
+    setOriginalLyrics(null)
+    setTranscriptionError(null)
+  }
+
+  const handleEditLyricsSubmit = async (editedLyrics: string) => {
+    if (!jobId) {
+      setError('Job ID not found')
+      return
+    }
+
+    try {
+      setIsProcessing(true)
+      setProcessingStep(3)
+      setError(null)
+
+      console.log('[v0] Submitting edited lyrics:', editedLyrics)
+
+      const response = await fetch('/api/process-audio', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          jobId,
+          editedLyrics,
+        }),
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to save lyrics')
+      }
+
+      console.log('[v0] Lyrics submitted, starting generation')
+      setIsEditingLyrics(false)
+    } catch (err) {
+      console.error('[v0] Error submitting lyrics:', err)
+      setError(err instanceof Error ? err.message : 'Failed to submit lyrics')
+    }
+  }
+
   const handleReset = () => {
     setFile(null)
     setOldName('')
     setNewName('')
     setIsReviewing(false)
+    setIsEditingLyrics(false)
     setIsProcessing(false)
     setProcessingStep(0)
+    setOriginalLyrics(null)
+    setTranscriptionError(null)
     setResultUrl(null)
     setError(null)
     setJobId(null)
@@ -216,14 +276,28 @@ function DashboardContent() {
           )}
 
           {/* Processing Section */}
-          {isProcessing && (
+          {isProcessing && !isEditingLyrics && (
             <div className="mb-8">
               <ProcessingStatus currentStep={processingStep} isProcessing={isProcessing} language={language || 'en'} />
             </div>
           )}
 
+          {/* Lyrics Editor Section */}
+          {isEditingLyrics && !isProcessing && !resultUrl && originalLyrics && (
+            <div className="max-w-4xl mx-auto">
+              <LyricsEditor
+                originalLyrics={originalLyrics}
+                isLoading={false}
+                onBack={handleBackFromLyrics}
+                onContinue={handleEditLyricsSubmit}
+                language={language || 'en'}
+                error={transcriptionError}
+              />
+            </div>
+          )}
+
           {/* Review Section */}
-          {isReviewing && !isProcessing && !resultUrl && (
+          {isReviewing && !isEditingLyrics && !isProcessing && !resultUrl && (
             <div className="max-w-4xl mx-auto">
               <ReviewLyrics
                 oldName={oldName}
@@ -238,7 +312,7 @@ function DashboardContent() {
           )}
 
           {/* Main Form Section */}
-          {!isReviewing && !isProcessing && !resultUrl && (
+          {!isReviewing && !isEditingLyrics && !isProcessing && !resultUrl && (
             <div className="max-w-4xl mx-auto space-y-8">
               {/* Audio Upload */}
               <div>

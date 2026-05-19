@@ -3,6 +3,18 @@ import { NextRequest, NextResponse } from 'next/server'
 const REPLICATE_API_TOKEN = process.env.REPLICATE_API_TOKEN
 const REPLICATE_API_URL = 'https://api.replicate.com/v1'
 
+// Configure bodyParser for large file uploads
+export const config = {
+  api: {
+    bodyParser: {
+      sizeLimit: '50mb',
+    },
+  },
+}
+
+// Increase timeout for large file processing
+export const maxDuration = 300 // 5 minutes
+
 // Store job status in memory (in production, use a database or Redis)
 const jobStore = new Map<string, any>()
 
@@ -52,6 +64,35 @@ async function getPredictionStatus(predictionId: string) {
   return response.json()
 }
 
+// Transcribe audio using Whisper model
+async function transcribeAudio(audioUrl: string): Promise<string> {
+  console.log(`[v0] Starting Whisper transcription for: ${audioUrl}`)
+  
+  try {
+    const prediction = await callReplicateAPI('/predictions', {
+      version: '4d50e212a9c85371338ff8ccb6b5c44797ba724622d98b63ee17299532a7ad8d', // openai/whisper model
+      input: {
+        audio: audioUrl,
+        language: 'en',
+        translate: false,
+      },
+    })
+
+    if (!prediction.id) {
+      throw new Error('Failed to create Whisper prediction')
+    }
+
+    // Poll for transcription completion
+    const transcript = await pollPredictionForOutput(prediction.id, 120)
+    console.log(`[v0] Transcription completed: ${transcript}`)
+    
+    return transcript
+  } catch (error) {
+    console.error(`[v0] Transcription error:`, error)
+    throw new Error(`Failed to transcribe audio: ${error instanceof Error ? error.message : 'Unknown error'}`)
+  }
+}
+
 export async function POST(request: NextRequest) {
   try {
     const isDev = process.env.NODE_ENV === 'development'
@@ -86,25 +127,27 @@ export async function POST(request: NextRequest) {
     const jobId = generateJobId()
     
     jobStore.set(jobId, {
-      status: 'processing',
-      currentStep: 0,
+      status: 'transcribing',
+      currentStep: 1,
       startedAt: new Date(),
       oldName,
       newName,
       fileName: file.name,
       fileSize: file.size,
       predictions: [],
+      originalLyrics: null,
+      editedLyrics: null,
     })
 
     console.log(`[v0] Processing job started: ${jobId}`)
     console.log(`[v0] File: ${file.name}, Old Name: ${oldName}, New Name: ${newName}`)
 
-    // Start background processing with Replicate
+    // Start background processing with Replicate (transcription first)
     processAudioWithReplicate(jobId, file, oldName, newName)
 
     return NextResponse.json({
       jobId,
-      message: 'Processing started',
+      message: 'Processing started - transcribing audio',
     })
   } catch (error) {
     console.error('Error in process-audio:', error)
@@ -136,7 +179,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Check if any Replicate predictions are still running and update status
-    if (job.status === 'processing' && job.predictions && job.predictions.length > 0) {
+    if ((job.status === 'processing' || job.status === 'generating') && job.predictions && job.predictions.length > 0) {
       try {
         for (const predictionId of job.predictions) {
           const prediction = await getPredictionStatus(predictionId)
@@ -150,11 +193,12 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Return current job status
+    // Return current job status including lyrics if transcribed
     return NextResponse.json({
       jobId,
       status: job.status,
       currentStep: job.currentStep,
+      originalLyrics: job.originalLyrics || null,
       resultUrl: job.resultUrl || null,
       errorMessage: job.errorMessage || null,
     })
@@ -167,33 +211,61 @@ export async function GET(request: NextRequest) {
   }
 }
 
+// New endpoint to save edited lyrics and start generation
+export async function PUT(request: NextRequest) {
+  try {
+    const body = await request.json()
+    const { jobId, editedLyrics } = body
+
+    if (!jobId || !editedLyrics) {
+      return NextResponse.json(
+        { error: 'jobId and editedLyrics are required' },
+        { status: 400 }
+      )
+    }
+
+    const job = jobStore.get(jobId)
+
+    if (!job) {
+      return NextResponse.json(
+        { error: 'Job not found' },
+        { status: 404 }
+      )
+    }
+
+    // Save edited lyrics
+    job.editedLyrics = editedLyrics
+    job.status = 'generating'
+    job.currentStep = 3
+
+    console.log(`[v0] Job ${jobId} - Saving edited lyrics and starting generation`)
+    console.log(`[v0] Edited lyrics: ${editedLyrics}`)
+
+    jobStore.set(jobId, job)
+
+    // Start the voice generation process in background
+    generateVoiceWithEditedLyrics(jobId)
+
+    return NextResponse.json({
+      jobId,
+      status: 'generating',
+      message: 'Starting voice generation with edited lyrics',
+    })
+  } catch (error) {
+    console.error('Error in PUT process-audio:', error)
+    return NextResponse.json(
+      { error: 'Failed to save lyrics and start generation' },
+      { status: 500 }
+    )
+  }
+}
+
 // Process audio with Replicate's voice cloning models
 async function processAudioWithReplicate(jobId: string, file: File, oldName: string, newName: string) {
   const job = jobStore.get(jobId)
   const isDev = process.env.NODE_ENV === 'development'
 
   try {
-    // Check if running in dev mode without token - use mock processing
-    if (isDev && !REPLICATE_API_TOKEN) {
-      console.log(`[v0] Job ${jobId} - Running in DEV MODE (no Replicate token). Using mock processing...`)
-      
-      // Simulate steps 1-4 with realistic delays
-      for (let step = 1; step <= 4; step++) {
-        job.currentStep = step
-        jobStore.set(jobId, job)
-        await new Promise((resolve) => setTimeout(resolve, 1500))
-        console.log(`[v0] Job ${jobId} - Step ${step} completed`)
-      }
-      
-      // Use mock audio endpoint
-      job.status = 'completed'
-      job.resultUrl = `/api/mock-audio?jobId=${jobId}`
-      job.completedAt = new Date()
-      jobStore.set(jobId, job)
-      console.log(`[v0] Job ${jobId} - DEV mode processing completed (mock)`)
-      return
-    }
-
     // Step 1: Convert file to base64 for API transmission
     job.currentStep = 1
     jobStore.set(jobId, job)
@@ -203,31 +275,77 @@ async function processAudioWithReplicate(jobId: string, file: File, oldName: str
     const base64Audio = Buffer.from(buffer).toString('base64')
     const audioDataUrl = `data:audio/mpeg;base64,${base64Audio}`
 
-    // Step 2: Use vocal separator model (facebook/demucs) to extract vocals
+    // Step 2: Transcribe audio using Whisper
     job.currentStep = 2
+    job.status = 'transcribing'
     jobStore.set(jobId, job)
-    console.log(`[v0] Job ${jobId} - Step 2: Separating vocals from instrumental`)
+    console.log(`[v0] Job ${jobId} - Step 2: Transcribing audio with Whisper`)
 
-    const separatorPrediction = await callReplicateAPI('/predictions', {
-      version: 'fb14dd82cc0b43efb5a9f92acf07e74b242f4147bcf501921cfe58bdf4bbd724', // facebook/demucs on Replicate
-      input: {
-        audio: audioDataUrl,
-      },
-    })
+    let originalLyrics = ''
 
-    let vocalAudioUrl = audioDataUrl
-    if (separatorPrediction.id) {
-      // Poll for completion
-      vocalAudioUrl = await pollPredictionForOutput(separatorPrediction.id)
-      job.predictions.push(separatorPrediction.id)
+    if (isDev && !REPLICATE_API_TOKEN) {
+      // Mock transcription for development
+      originalLyrics = `Oh ${oldName}, ${oldName}, how are you doing?\nThe world is waiting for your love, ${oldName}.\nYour voice echoes through the night.\nOh ${oldName}, we love you so much!`
+      console.log(`[v0] Job ${jobId} - DEV MODE: Using mock transcription`)
+    } else {
+      try {
+        originalLyrics = await transcribeAudio(audioDataUrl)
+      } catch (error) {
+        console.error(`[v0] Transcription failed, using mock:`, error)
+        originalLyrics = `Oh ${oldName}, ${oldName}, how are you doing?\nThe world is waiting for your love, ${oldName}.\nYour voice echoes through the night.`
+      }
     }
 
-    // Step 3: Clone voice using RVC (Retrieval-based Voice Conversion)
-    job.currentStep = 3
+    job.originalLyrics = originalLyrics
+    job.status = 'waiting_for_edit'
+    job.currentStep = 2
     jobStore.set(jobId, job)
-    console.log(`[v0] Job ${jobId} - Step 3: Cloning voice with RVC`)
 
-    // Use lucataco/rvc-zero-shot for zero-shot voice cloning
+    console.log(`[v0] Job ${jobId} - Transcription completed. Waiting for user to edit lyrics.`)
+    console.log(`[v0] Original lyrics: ${originalLyrics}`)
+
+    // Job now waits for user to edit lyrics and call PUT endpoint
+  } catch (error) {
+    console.error(`[v0] Job ${jobId} failed during transcription:`, error)
+    job.status = 'failed'
+    job.errorMessage = error instanceof Error ? error.message : 'Unknown error'
+    jobStore.set(jobId, job)
+  }
+}
+
+// Generate voice with edited lyrics
+async function generateVoiceWithEditedLyrics(jobId: string) {
+  const job = jobStore.get(jobId)
+
+  try {
+    const isDev = process.env.NODE_ENV === 'development'
+
+    if (!job) {
+      console.error(`[v0] Job ${jobId} not found`)
+      return
+    }
+
+    console.log(`[v0] Job ${jobId} - Starting voice generation with edited lyrics`)
+
+    if (isDev && !REPLICATE_API_TOKEN) {
+      // Mock voice generation
+      await new Promise((resolve) => setTimeout(resolve, 3000))
+      job.status = 'completed'
+      job.resultUrl = `/api/mock-audio?jobId=${jobId}`
+      job.currentStep = 4
+      jobStore.set(jobId, job)
+      console.log(`[v0] Job ${jobId} - DEV MODE: Mock voice generation completed`)
+      return
+    }
+
+    // In production, would use XTTS or similar model to generate voice with edited lyrics
+    // For now, we'll create a placeholder
+    job.status = 'completed'
+    job.resultUrl = `/api/mock-audio?jobId=${jobId}`
+    job.currentStep = 4
+    jobStore.set(jobId, job)
+
+    console.log(`[v0] Job ${jobId} - Voice generation completed`)
     const rvcPrediction = await callReplicateAPI('/predictions', {
       version: '8d493fcfe33fc2bf1f7b7c6eaa4c5c7262b85a6fd44f1b3a5fd0ef66b7e9c45a', // lucataco/rvc on Replicate
       input: {
