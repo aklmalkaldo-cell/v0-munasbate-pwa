@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { Header } from '@/components/Header'
 import { AudioUpload } from '@/components/AudioUpload'
 import { TextInputs } from '@/components/TextInputs'
+import { ReviewLyrics } from '@/components/ReviewLyrics'
 import { ProcessingStatus } from '@/components/ProcessingStatus'
 import { AudioPlayer } from '@/components/AudioPlayer'
 import { LanguageProvider } from '@/components/LanguageProvider'
@@ -14,7 +15,7 @@ const translations = {
   en: {
     'main.title': 'Zero-Shot Voice Cloning',
     'main.subtitle': 'Upload your song and replace any name with AI-powered voice cloning powered by Replicate',
-    'form.submit': 'Customize with Replicate AI',
+    'form.submit': 'Review & Continue',
     'errors.fileRequired': 'Please upload an audio file',
     'errors.nameRequired': 'Please enter both old and new names',
     'customizeAnother': 'Customize Another Song',
@@ -22,7 +23,7 @@ const translations = {
   ar: {
     'main.title': 'استنساخ الصوت بدون نموذج',
     'main.subtitle': 'قم برفع أغنيتك واستبدل أي اسم باستخدام استنساخ الصوت الذي يعتمد على الذكاء الاصطناعي من Replicate',
-    'form.submit': 'تخصيص مع Replicate AI',
+    'form.submit': 'مراجعة والمتابعة',
     'errors.fileRequired': 'يرجى رفع ملف صوتي',
     'errors.nameRequired': 'يرجى إدخال الاسم القديم والجديد',
     'customizeAnother': 'خصص أغنية أخرى',
@@ -43,6 +44,7 @@ function DashboardContent() {
   const [fileSize, setFileSize] = useState<string>('')
   const [oldName, setOldName] = useState('')
   const [newName, setNewName] = useState('')
+  const [isReviewing, setIsReviewing] = useState(false)
   const [isProcessing, setIsProcessing] = useState(false)
   const [processingStep, setProcessingStep] = useState(0)
   const [resultUrl, setResultUrl] = useState<string | null>(null)
@@ -98,7 +100,7 @@ function DashboardContent() {
     setError(null)
   }
 
-  const handleSubmit = async () => {
+  const handleReviewSubmit = () => {
     if (!file) {
       setError(t('errors.fileRequired'))
       return
@@ -106,6 +108,16 @@ function DashboardContent() {
 
     if (!oldName.trim() || !newName.trim()) {
       setError(t('errors.nameRequired'))
+      return
+    }
+
+    setError(null)
+    setIsReviewing(true)
+  }
+
+  const handleConfirmProcessing = async () => {
+    if (!file) {
+      setError(t('errors.fileRequired'))
       return
     }
 
@@ -120,7 +132,7 @@ function DashboardContent() {
       formData.append('oldName', oldName)
       formData.append('newName', newName)
 
-      console.log('[v0] Submitting form with:', { fileName: file.name, oldName, newName })
+      console.log('[v0] Starting processing with:', { fileName: file.name, oldName, newName })
 
       const response = await fetch('/api/process-audio', {
         method: 'POST',
@@ -135,6 +147,7 @@ function DashboardContent() {
 
       console.log('[v0] Job created:', data.jobId)
       setJobId(data.jobId)
+      setIsReviewing(false)
     } catch (err) {
       console.error('[v0] Submission error:', err)
       setIsProcessing(false)
@@ -142,10 +155,15 @@ function DashboardContent() {
     }
   }
 
+  const handleBackToEdit = () => {
+    setIsReviewing(false)
+  }
+
   const handleReset = () => {
     setFile(null)
     setOldName('')
     setNewName('')
+    setIsReviewing(false)
     setIsProcessing(false)
     setProcessingStep(0)
     setResultUrl(null)
@@ -204,12 +222,27 @@ function DashboardContent() {
             </div>
           )}
 
+          {/* Review Section */}
+          {isReviewing && !isProcessing && !resultUrl && (
+            <div className="max-w-4xl mx-auto">
+              <ReviewLyrics
+                oldName={oldName}
+                newName={newName}
+                fileName={file?.name || ''}
+                onConfirm={handleConfirmProcessing}
+                onEdit={handleBackToEdit}
+                language={language || 'en'}
+                isLoading={isProcessing}
+              />
+            </div>
+          )}
+
           {/* Main Form Section */}
-          {!resultUrl && !isProcessing && (
+          {!isReviewing && !isProcessing && !resultUrl && (
             <div className="max-w-4xl mx-auto space-y-8">
               {/* Audio Upload */}
               <div>
-                <AudioUpload onFileSelect={handleFileSelect} disabled={isProcessing} language={language || 'en'} />
+                <AudioUpload onFileSelect={handleFileSelect} disabled={isProcessing || isReviewing} language={language || 'en'} />
               </div>
 
               {/* Text Inputs */}
@@ -223,7 +256,7 @@ function DashboardContent() {
                     fileName={file.name}
                     duration={duration}
                     fileSize={fileSize}
-                    disabled={isProcessing}
+                    disabled={isProcessing || isReviewing}
                     language={language || 'en'}
                   />
                 </div>
@@ -232,12 +265,12 @@ function DashboardContent() {
               {/* Submit Button */}
               {file && (
                 <Button
-                  onClick={handleSubmit}
-                  disabled={isProcessing || !file || !oldName.trim() || !newName.trim()}
+                  onClick={handleReviewSubmit}
+                  disabled={!file || !oldName.trim() || !newName.trim()}
                   size="lg"
                   className="w-full bg-gradient-to-r from-primary to-purple-600 hover:from-primary/90 hover:to-purple-600/90 text-primary-foreground text-lg h-12 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {isProcessing ? 'Processing...' : t('form.submit')}
+                  {t('form.submit')}
                 </Button>
               )}
             </div>
