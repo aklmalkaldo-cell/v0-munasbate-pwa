@@ -158,8 +158,8 @@ function DashboardContent() {
   return (
     <LanguageProvider>
       <div className={`min-h-screen bg-background text-foreground ${isRTL ? 'dir-rtl' : ''}`}>
-        <Header language={language} onLanguageChange={(lang) => {
-          setLanguage(lang)
+        <Header language={language || 'en'} onLanguageChange={(lang) => {
+          setLanguageState(lang)
           localStorage.setItem('language', lang)
         }} />
 
@@ -185,7 +185,7 @@ function DashboardContent() {
           {/* Results Section */}
           {resultUrl && !isProcessing && (
             <div className="mb-8">
-              <AudioPlayer audioUrl={resultUrl} fileName={file?.name || 'customized'} language={language} />
+              <AudioPlayer audioUrl={resultUrl} fileName={file?.name || 'customized'} language={language || 'en'} />
               <Button
                 onClick={handleReset}
                 size="lg"
@@ -200,7 +200,7 @@ function DashboardContent() {
           {/* Processing Section */}
           {isProcessing && (
             <div className="mb-8">
-              <ProcessingStatus currentStep={processingStep} isProcessing={isProcessing} language={language} />
+              <ProcessingStatus currentStep={processingStep} isProcessing={isProcessing} language={language || 'en'} />
             </div>
           )}
 
@@ -209,7 +209,7 @@ function DashboardContent() {
             <div className="max-w-4xl mx-auto space-y-8">
               {/* Audio Upload */}
               <div>
-                <AudioUpload onFileSelect={handleFileSelect} disabled={isProcessing} language={language} />
+                <AudioUpload onFileSelect={handleFileSelect} disabled={isProcessing} language={language || 'en'} />
               </div>
 
               {/* Text Inputs */}
@@ -224,7 +224,7 @@ function DashboardContent() {
                     duration={duration}
                     fileSize={fileSize}
                     disabled={isProcessing}
-                    language={language}
+                    language={language || 'en'}
                   />
                 </div>
               )}

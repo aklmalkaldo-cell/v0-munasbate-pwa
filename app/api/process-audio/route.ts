@@ -54,7 +54,9 @@ async function getPredictionStatus(predictionId: string) {
 
 export async function POST(request: NextRequest) {
   try {
-    if (!REPLICATE_API_TOKEN) {
+    const isDev = process.env.NODE_ENV === 'development'
+    
+    if (!REPLICATE_API_TOKEN && !isDev) {
       return NextResponse.json(
         { error: 'REPLICATE_API_TOKEN not configured' },
         { status: 500 }
@@ -168,8 +170,30 @@ export async function GET(request: NextRequest) {
 // Process audio with Replicate's voice cloning models
 async function processAudioWithReplicate(jobId: string, file: File, oldName: string, newName: string) {
   const job = jobStore.get(jobId)
+  const isDev = process.env.NODE_ENV === 'development'
 
   try {
+    // Check if running in dev mode without token - use mock processing
+    if (isDev && !REPLICATE_API_TOKEN) {
+      console.log(`[v0] Job ${jobId} - Running in DEV MODE (no Replicate token). Using mock processing...`)
+      
+      // Simulate steps 1-4 with realistic delays
+      for (let step = 1; step <= 4; step++) {
+        job.currentStep = step
+        jobStore.set(jobId, job)
+        await new Promise((resolve) => setTimeout(resolve, 1500))
+        console.log(`[v0] Job ${jobId} - Step ${step} completed`)
+      }
+      
+      // Use mock audio endpoint
+      job.status = 'completed'
+      job.resultUrl = `/api/mock-audio?jobId=${jobId}`
+      job.completedAt = new Date()
+      jobStore.set(jobId, job)
+      console.log(`[v0] Job ${jobId} - DEV mode processing completed (mock)`)
+      return
+    }
+
     // Step 1: Convert file to base64 for API transmission
     job.currentStep = 1
     jobStore.set(jobId, job)
